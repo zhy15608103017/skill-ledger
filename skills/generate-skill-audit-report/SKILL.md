@@ -1,41 +1,41 @@
 ---
 name: generate-skill-audit-report
-description: Generate a Chinese Markdown skill usage audit report from a Skill Ledger run. Use at the end of audited tasks, when the user asks which skills were called or not called, when tuning skill descriptions and triggers, or when exporting evidence from Codex, OpenCode, Gemini, Kimi, Claude Code, Cursor, or similar coding agents.
+description: Use when 需要根据 Skill Ledger 的运行结果生成中文 Markdown 的 skills 审计报告，或在审计任务结束时、用户想知道哪些 skills 被调用或未被调用时、调优 skill 描述与触发条件时，以及从 Codex、OpenCode、Gemini、Kimi、Claude Code、Cursor 等编程代理导出证据时使用。
 ---
 
-# Generate Skill Ledger Report
+# 生成 Skill Ledger 报告
 
-## Overview
+## 概述
 
-Finalize the current skill audit run and write a Chinese Markdown report. The report lists discovered skills, called skills, not-called skills, and the evidence level for each call.
+结束当前的 skill 审计运行，并生成一份中文 Markdown 报告。报告应列出已发现的 skills、已调用的 skills、未调用的 skills，以及每次调用对应的证据等级。
 
-## Workflow
+## 工作流程
 
-1. Locate the plugin root: the directory that contains `scripts/skill-ledger.mjs`.
-2. Determine the `runId` from the earlier `using-skill-audit` start command or from the bootstrap message.
-3. Mark the run as finished:
+1. 找到插件根目录：也就是包含 `scripts/skill-ledger.mjs` 的目录。
+2. 从之前 `using-skill-audit` 的启动命令输出，或 bootstrap 消息中，确定本次运行的 `runId`。
+3. 将这次运行标记为结束：
 
 ```bash
 node "<plugin-root>/scripts/skill-ledger.mjs" finish --run-id "<runId>"
 ```
 
-4. Generate the report:
+4. 生成报告：
 
 ```bash
 node "<plugin-root>/scripts/skill-ledger.mjs" report --run-id "<runId>"
 ```
 
-To choose an explicit path:
+如果要指定输出路径：
 
 ```bash
 node "<plugin-root>/scripts/skill-ledger.mjs" report --run-id "<runId>" --output "<workspace>/.skill-ledger/reports/<name>.md"
 ```
 
-## Report Rules
+## 报告规则
 
-- The report must be Chinese Markdown.
-- Preserve evidence labels: `native_observed`, `self_reported`, and `log_inferred`.
-- If no skills were discovered, explain that the host did not expose skill roots or the roots were not passed to the audit start command.
-- Do not infer perfect accuracy from self-reported calls; mention the evidence level instead.
+- 报告必须是中文 Markdown。
+- 保留证据标签：`native_observed`、`self_reported`、`log_inferred`。
+- 如果没有发现任何 skills，需要说明原因是宿主环境没有暴露 skill roots，或者这些 roots 没有在审计启动命令中传入。
+- 不要把 `self_reported` 的调用当成绝对准确的事实，应明确写出它的证据等级。
 
-After writing the report, tell the user the absolute report path.
+生成报告后，告诉用户报告文件的绝对路径。
