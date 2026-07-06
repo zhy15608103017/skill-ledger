@@ -1,0 +1,30 @@
+{
+  "name": "skill-ledger",
+  "version": "0.1.0",
+  "description": "Record skill usage and generate Chinese Markdown reports.",
+  "author": {
+    "name": "Local developer"
+  },
+  "license": "MIT",
+  "keywords": [
+    "skills",
+    "audit",
+    "reports"
+  ],
+  "skills": "./skills/",
+  "sessionStart": {
+    "skill": "using-skill-audit"
+  },
+  "skillInstructions": "Skill Audit reports must be written in Chinese Markdown. Before using another skill, record it with `node <plugin-root>/scripts/skill-audit.mjs call --run-id <runId> --skill <skill-name> --evidence self_reported --reason <中文原因>`. Use Kimi Code's native tools for shell commands and file access.",
+  "interface": {
+    "displayName": "Skill Ledger",
+    "shortDescription": "Record skill usage and generate Chinese audit reports.",
+    "longDescription": "Tracks discovered and called skills during a task, then writes a Chinese Markdown report for skill tuning.",
+    "developerName": "Local developer",
+    "capabilities": [
+      "Interactive",
+      "Read",
+      "Write"
+    ]
+  }
+}

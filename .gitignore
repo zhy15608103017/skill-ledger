@@ -1,0 +1,5 @@
+node_modules/
+.skill-audit/
+npm-debug.log*
+*.tgz
+.DS_Store

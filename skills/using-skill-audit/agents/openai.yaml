@@ -1,0 +1,4 @@
+interface:
+  display_name: "Using Skill Ledger"
+  short_description: "Record skill usage for the current task"
+  default_prompt: "Start auditing skill usage for this task."

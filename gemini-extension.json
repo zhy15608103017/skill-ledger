@@ -1,0 +1,6 @@
+{
+  "name": "skill-ledger",
+  "description": "Record skill usage and generate Chinese Markdown reports.",
+  "version": "0.1.0",
+  "contextFileName": "GEMINI.md"
+}
