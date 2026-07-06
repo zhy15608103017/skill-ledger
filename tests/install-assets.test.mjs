@@ -16,3 +16,15 @@ test("Codex quick install assets exist and document the shortcut command", async
   assert.match(docs, /快速安装/);
   assert.match(docs, /powershell -ExecutionPolicy Bypass -File scripts\/install-codex\.ps1/);
 });
+
+test("OpenCode quick install assets exist and document the shortcut command", async () => {
+  const script = await readFile("scripts/install-opencode.ps1", "utf8");
+  const docs = await readFile("docs/INSTALL.md", "utf8");
+
+  assert.match(script, /opencode\.json/);
+  assert.match(script, /skill-ledger/);
+  assert.match(script, /plugin/);
+  assert.match(script, /update-opencode-config\.mjs/);
+  assert.match(docs, /OpenCode 快速安装/);
+  assert.match(docs, /powershell -ExecutionPolicy Bypass -File scripts\/install-opencode\.ps1/);
+});

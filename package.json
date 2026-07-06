@@ -5,7 +5,7 @@
   "type": "module",
   "main": ".opencode/plugins/skill-ledger.js",
   "bin": {
-    "skill-ledger": "./scripts/skill-ledger.mjs"
+    "skill-ledger": "scripts/skill-ledger.mjs"
   },
   "scripts": {
     "test": "node --test tests",

@@ -22,11 +22,38 @@ powershell -ExecutionPolicy Bypass -File scripts/install-codex.ps1
 
 ## Install From npm
 
+Publish:
+
+```powershell
+npm login --registry=https://registry.npmjs.org/
+npm test
+npm pack --dry-run
+npm publish --access public --registry=https://registry.npmjs.org/
+```
+
 After publishing to npm, install the CLI globally:
 
 ```bash
 npm install -g skill-ledger
 skill-ledger start --harness codex --cwd .
+```
+
+Quick install a supported AI coding tool after npm publish:
+
+```powershell
+npx skill-ledger
+```
+
+This opens an interactive installer:
+
+- `1. Codex`
+- `2. OpenCode`
+
+Non-interactive shortcuts are also available:
+
+```powershell
+npx skill-ledger install-codex
+npx skill-ledger install-opencode
 ```
 
 For OpenCode, use the npm package name in `opencode.json`:
@@ -37,7 +64,13 @@ For OpenCode, use the npm package name in `opencode.json`:
 }
 ```
 
-If you publish under a scope, replace `skill-ledger` with `@your-scope/skill-ledger`.
+If you publish under a scope, replace `skill-ledger` with `@your-scope/skill-ledger` and run:
+
+```powershell
+npx @your-scope/skill-ledger
+```
+
+The OpenCode shortcut reads the package name from `package.json`, so scoped packages are written correctly.
 
 ## Basic Commands
 
