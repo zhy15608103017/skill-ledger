@@ -16,4 +16,4 @@ For local development, point OpenCode at this checkout:
 }
 ```
 
-Restart OpenCode. The plugin registers the bundled skills and injects a Chinese audit bootstrap into each session.
+Restart OpenCode. The plugin registers the bundled skills and injects a Skill Ledger startup bootstrap into each session. The bootstrap includes the active run ID, CLI commands, and the full `using-skill-audit` skill body.

@@ -33,6 +33,13 @@ test("OpenCode adapter registers skills, injects bootstrap, and starts a run", a
     await plugin["experimental.chat.messages.transform"]({}, output);
 
     assert.match(output.messages[0].parts[0].text, new RegExp(AUDIT_BOOTSTRAP_MARKER));
+    assert.match(output.messages[0].parts[0].text, /^<EXTREMELY_IMPORTANT>\nYou have Skill Ledger\./);
+    assert.match(output.messages[0].parts[0].text, /ALREADY LOADED/);
+    assert.match(output.messages[0].parts[0].text, /Tool Mapping for OpenCode/);
+    assert.doesNotMatch(output.messages[0].parts[0].text, /<SKILL_AUDIT>/);
+    assert.doesNotMatch(output.messages[0].parts[0].text, /^---$/m);
+    assert.match(output.messages[0].parts[0].text, /# Using Skill Ledger/);
+    assert.match(output.messages[0].parts[0].text, /BEFORE any response or action/);
 
     const runFiles = await readdir(path.join(auditHome, "runs"));
     assert.equal(runFiles.length, 1);

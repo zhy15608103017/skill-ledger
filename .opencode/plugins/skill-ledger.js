@@ -3,12 +3,13 @@ import path from "node:path";
 import { fileURLToPath } from "node:url";
 
 import { appendEvent } from "../../core/audit-log.mjs";
-import { buildBootstrapText, AUDIT_BOOTSTRAP_MARKER } from "../../core/bootstrap.mjs";
+import { buildBootstrapText, readStartupSkillText } from "../../core/bootstrap.mjs";
 import { scanSkillRoots } from "../../core/skill-scanner.mjs";
 
 const __dirname = path.dirname(fileURLToPath(import.meta.url));
 const pluginRoot = path.resolve(__dirname, "../..");
 const pluginSkillsDir = path.join(pluginRoot, "skills");
+let startupSkillTextCache;
 
 export const SkillLedgerPlugin = async ({ directory } = {}) => {
   const workspaceDir = path.resolve(directory || process.cwd());
@@ -31,7 +32,7 @@ export const SkillLedgerPlugin = async ({ directory } = {}) => {
       if (!output?.messages?.length) return;
       const firstUser = output.messages.find((message) => message.info?.role === "user");
       if (!firstUser?.parts?.length) return;
-      if (firstUser.parts.some((part) => part.type === "text" && part.text?.includes(AUDIT_BOOTSTRAP_MARKER))) return;
+      if (firstUser.parts.some((part) => part.type === "text" && part.text?.includes("EXTREMELY_IMPORTANT"))) return;
 
       if (!started) {
         const start = await startAuditRun({ workspaceDir, auditHome, skillRoots });
@@ -40,11 +41,13 @@ export const SkillLedgerPlugin = async ({ directory } = {}) => {
         started = true;
       }
 
+      const startupSkillText = await getStartupSkillText();
+
       const ref = firstUser.parts[0];
       firstUser.parts.unshift({
         ...ref,
         type: "text",
-        text: buildBootstrapText({ runId, pluginRoot, logFile, harness: "opencode" }),
+        text: buildBootstrapText({ runId, pluginRoot, logFile, harness: "opencode", skillText: startupSkillText }),
       });
     },
   };
@@ -81,4 +84,10 @@ function normalizeSkillPath(value, workspaceDir) {
 function createRunId() {
   const stamp = new Date().toISOString().replace(/[-:]/g, "").replace(/\..+/, "Z");
   return `${stamp}-${randomUUID().slice(0, 8)}`;
+}
+
+async function getStartupSkillText() {
+  if (startupSkillTextCache !== undefined) return startupSkillTextCache;
+  startupSkillTextCache = await readStartupSkillText(pluginRoot);
+  return startupSkillTextCache;
 }

@@ -1,38 +1,61 @@
+import { readFile } from "node:fs/promises";
 import path from "node:path";
 
-export const AUDIT_BOOTSTRAP_MARKER = "skill-ledger bootstrap";
+export const AUDIT_BOOTSTRAP_MARKER = "The using-skill-audit skill content is included below";
+export const STARTUP_SKILL_NAME = "using-skill-audit";
 
-export function buildBootstrapText({ runId, pluginRoot, logFile, harness }) {
+export async function readStartupSkillText(pluginRoot, skillName = STARTUP_SKILL_NAME) {
+  return readFile(path.join(pluginRoot, "skills", skillName, "SKILL.md"), "utf8");
+}
+
+export function stripSkillFrontmatter(skillText) {
+  return skillText.replace(/^---\r?\n[\s\S]*?\r?\n---\r?\n*/, "");
+}
+
+export function buildBootstrapText({ runId, pluginRoot, logFile, harness, skillText = "" }) {
   const script = path.join(pluginRoot, "scripts", "skill-ledger.mjs");
-  const callCommand = `node "${script}" call --run-id ${runId} --skill <skill-name> --evidence self_reported --reason "<为什么调用这个 skill>"`;
+  const callCommand = `node "${script}" call --run-id ${runId} --skill <skill-name> --evidence self_reported --reason "<Chinese reason for using this skill>"`;
   const reportCommand = `node "${script}" report --run-id ${runId}`;
+  const startupSkill = stripSkillFrontmatter(skillText).trim();
+  const toolMapping = `**Tool Mapping for OpenCode:**
+When skills request actions, substitute OpenCode equivalents:
+- Create or update todos -> \`todowrite\`
+- \`Subagent (general-purpose):\` -> \`task\` with \`subagent_type: "general"\`
+- Invoke a skill -> OpenCode's native \`skill\` tool
+- Read files -> \`read\`
+- Create, edit, or delete files -> \`apply_patch\`
+- Run shell commands -> \`bash\`
+- Search files -> \`grep\`, \`glob\`
+- Fetch a URL -> \`webfetch\`
 
-  return `<SKILL_AUDIT>
-${AUDIT_BOOTSTRAP_MARKER}
+Use OpenCode's native \`skill\` tool to list and load skills.`;
 
-Skills 调用审计已启动。
+  return `<EXTREMELY_IMPORTANT>
+You have Skill Ledger.
 
-- 运行 ID：${runId}
-- 宿主工具：${harness || "unknown"}
-- 日志文件：${logFile}
+**IMPORTANT: ${AUDIT_BOOTSTRAP_MARKER}. It is ALREADY LOADED - you are currently following it. Do NOT use the skill tool to load "using-skill-audit" again - that would be redundant.**
 
-执行要求：
+## Active Skill Ledger Audit
 
-1. 每次准备使用任何 skill 之前，先记录一次调用事件。
-2. 记录命令格式：
+- runId: ${runId}
+- harness: ${harness || "unknown"}
+- logFile: ${logFile}
+- pluginRoot: ${pluginRoot}
+
+Record every other skill before using it:
 
 \`\`\`bash
 ${callCommand}
 \`\`\`
 
-3. reason 必须用中文说明为什么本次任务需要这个 skill。
-4. 如果宿主工具能原生观测 skill 调用，优先使用 native_observed；否则使用 self_reported。
-5. 收尾时生成报告：
+Generate the Chinese Markdown report at the end of the task:
 
 \`\`\`bash
 ${reportCommand}
 \`\`\`
 
-报告必须输出为中文 Markdown，并保留已调用、未调用和证据等级说明。
-</SKILL_AUDIT>`;
+${startupSkill}
+
+${toolMapping}
+</EXTREMELY_IMPORTANT>`;
 }

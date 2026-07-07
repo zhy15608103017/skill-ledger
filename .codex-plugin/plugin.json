@@ -13,6 +13,7 @@
     "developer-tools"
   ],
   "skills": "./skills/",
+  "hooks": {},
   "interface": {
     "displayName": "Skill Ledger",
     "shortDescription": "Record skill usage and generate Chinese audit reports.",

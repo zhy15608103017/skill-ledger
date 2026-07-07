@@ -1,34 +1,51 @@
 ---
 name: using-skill-audit
-description: Use when 需要为当前任务启动并维护一次 skill 使用审计，或在用户想知道哪些 skills 被调用或未被调用时、调优 skills 时、比较 Codex、OpenCode、Gemini、Kimi、Claude Code、Cursor 等编程代理的 skill 触发表现时，以及在调用其他 skills 之前记录每一次 skill 调用时使用。
+description: Use when starting any conversation, starting any task, before answering, or before invoking any other skill in an agent where Skill Ledger is installed or skill usage should be audited.
 ---
 
-# 使用 Skill Ledger
+<SUBAGENT-STOP>
+If you were dispatched as a subagent for a narrow implementation or review task, use an existing bootstrap run only when one is explicitly provided. Do not start a separate audit run unless the user asked the subagent to audit skills.
+</SUBAGENT-STOP>
 
-## 概述
+<EXTREMELY-IMPORTANT>
+Skill Ledger is a session-start workflow.
 
-为当前任务启动一轮本地审计，记录已发现的 skills 以及每一次 skill 调用。最终生成的报告默认是中文 Markdown。
+BEFORE any response or action in a normal user-owned session, you MUST start a Skill Ledger audit run unless the current context already includes an active Skill Ledger bootstrap with a runId.
 
-## 工作流程
+BEFORE invoking any other skill, you MUST record that skill call with the active runId.
 
-1. 找到插件根目录：也就是包含 `scripts/skill-ledger.mjs` 的目录。
-2. 在使用任何其他 skill 之前，先启动一次审计运行：
+If you think there is even a 1% chance another skill might apply to the task, this skill applies first.
+</EXTREMELY-IMPORTANT>
+
+# Using Skill Ledger
+
+Start and maintain a local audit of which skills were discovered and which skills were actually called. The final report is Chinese Markdown.
+
+## Startup Rule
+
+1. Find the plugin root: the directory that contains `scripts/skill-ledger.mjs`.
+2. If the prompt already contains an `Active Skill Ledger Audit` section with `runId`, `logFile`, and command examples, reuse that run.
+3. If no active run exists, start one before doing task work:
 
 ```bash
 node "<plugin-root>/scripts/skill-ledger.mjs" start --harness "<tool-name>" --cwd "<workspace>"
 ```
 
-这个命令会输出一个 `runId`。在本次任务后续的所有记录中，都要持续使用这个值。
+Keep the returned `runId` for the rest of the task.
 
-3. 在调用每一个 skill 之前，先记录这次调用：
+## Before Other Skills
+
+Before using any other skill, record it:
 
 ```bash
-node "<plugin-root>/scripts/skill-ledger.mjs" call --run-id "<runId>" --skill "<skill-name>" --evidence self_reported --reason "<中文原因>"
+node "<plugin-root>/scripts/skill-ledger.mjs" call --run-id "<runId>" --skill "<skill-name>" --evidence self_reported --reason "<Chinese reason>"
 ```
 
-只有在宿主适配器直接观察到调用时，才使用 `native_observed`。当模型是按照这个 skill 主动记录调用时，使用 `self_reported`。只有在根据对话记录或日志反推审计结果时，才使用 `log_inferred`。
+Use `native_observed` only when the host adapter directly observed the skill call. Use `self_reported` when the model records the call because this skill required it. Use `log_inferred` only when reconstructing an audit from logs or a transcript.
 
-4. 任务结束后，使用 `generate-skill-audit-report` skill，或者直接执行：
+## Finish
+
+At the end of the task, use `generate-skill-audit-report` or run:
 
 ```bash
 node "<plugin-root>/scripts/skill-ledger.mjs" finish --run-id "<runId>"
@@ -37,6 +54,17 @@ node "<plugin-root>/scripts/skill-ledger.mjs" report --run-id "<runId>"
 
 ## Skill Roots
 
-如果宿主环境能够暴露 skill 目录，那么在执行 `start` 时，使用重复的 `--skills` 参数把每个目录都传进去。如果没有显式传入 roots，CLI 会扫描一些常见的本地目录，例如插件自身的 `skills/`、`.codex/skills`、`.opencode/skills`、`~/.codex/skills`、`~/.agents/skills` 和 `~/.config/opencode/skills`。
+If the host exposes skill directories, pass each one with repeated `--skills` flags during `start`. Without explicit roots, the CLI scans common local locations such as the plugin's own `skills/`, `.codex/skills`, `.opencode/skills`, `~/.codex/skills`, `~/.agents/skills`, and `~/.config/opencode/skills`.
 
-如果某个 skill root 缺失，不要因此阻塞用户的主要任务。缺失的 roots 会被跳过，报告中应说明：skill 发现结果取决于宿主环境实际提供了哪些 roots。
+Missing roots must not block the user's main task. The report should explain that skill discovery depends on which roots the host environment exposed.
+
+## Red Flags
+
+These mean stop and record the audit event first:
+
+| Thought | Reality |
+|---|---|
+| "This is just a quick answer" | Starting a task is the trigger. Start or reuse the audit run first. |
+| "I need to read files before deciding" | Reading files is task work. Start or reuse the audit run first. |
+| "I will log the skill later" | Later logs lose evidence. Record before the skill call. |
+| "Another skill is more important" | Other skills come after Skill Ledger when auditing is installed. |
