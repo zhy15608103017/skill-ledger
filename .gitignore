@@ -4,3 +4,6 @@ npm-debug.log*
 *.tgz
 .DS_Store
 .skill-ledger/
+.env
+.ai-review
+.ai-reviewignore
