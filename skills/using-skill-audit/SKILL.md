@@ -45,18 +45,26 @@ Use `native_observed` only when the host adapter directly observed the skill cal
 
 ## Finish
 
-At the end of the task, use `generate-skill-audit-report` or run:
+At the end of the task, finish the run. This automatically writes a Chinese Markdown report under `.skill-ledger/reports/`:
 
 ```bash
 node "<plugin-root>/scripts/skill-ledger.mjs" finish --run-id "<runId>"
-node "<plugin-root>/scripts/skill-ledger.mjs" report --run-id "<runId>"
 ```
+
+Use `--no-report` only when the caller explicitly wants to close the run without writing a report. Use the separate `report` command when regenerating a report or writing it to a custom output path.
 
 ## Skill Roots
 
 If the host exposes skill directories, pass each one with repeated `--skills` flags during `start`. Without explicit roots, the CLI scans common local locations such as the plugin's own `skills/`, `.codex/skills`, `.opencode/skills`, `~/.codex/skills`, `~/.agents/skills`, and `~/.config/opencode/skills`.
 
 Missing roots must not block the user's main task. The report should explain that skill discovery depends on which roots the host environment exposed.
+
+## Platform Tool Mapping
+
+Some hosts load Skill Ledger through a native plugin or extension but do not expose a dedicated Skill tool. When that happens, use the host's documented skill-loading path instead of inventing a tool call.
+
+- Pi: `references/pi-tools.md`
+- Antigravity: `references/antigravity-tools.md`
 
 ## Red Flags
 

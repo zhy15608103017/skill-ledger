@@ -1,5 +1,9 @@
 # Installing Skill Ledger for OpenCode
 
+This file covers OpenCode only. The repository also ships compatibility
+artifacts for Claude Code, Cursor, GitHub Copilot CLI, Codex App/CLI, Kimi Code,
+Gemini, Pi, Antigravity, and Factory Droid; see `README.md` for the full matrix.
+
 Add this plugin to the `plugin` array in your `opencode.json`:
 
 ```json

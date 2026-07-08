@@ -38,6 +38,14 @@ async function showQuickInstallMenu() {
   console.log("Supported AI coding tools:");
   console.log("  1. Codex");
   console.log("  2. OpenCode");
+  console.log("  3. Claude Code");
+  console.log("  4. Cursor");
+  console.log("  5. GitHub Copilot CLI");
+  console.log("  6. Kimi Code");
+  console.log("  7. Gemini");
+  console.log("  8. Pi");
+  console.log("  9. Antigravity");
+  console.log("  10. Factory Droid");
   console.log("  q. Cancel");
   console.log("");
 
@@ -52,6 +60,61 @@ async function showQuickInstallMenu() {
       await installOpenCode({ plugin: await packageNameForInstall() });
       return;
     }
+    if (["3", "claude", "claude code"].includes(answer)) {
+      printInstallGuidance("Claude Code", [
+        "/plugin marketplace add <owner>/skill-ledger-marketplace",
+        "/plugin install skill-ledger@skill-ledger-marketplace",
+        "For local development, point Claude Code at this repository as a plugin directory.",
+      ]);
+      return;
+    }
+    if (answer === "4" || answer === "cursor") {
+      printInstallGuidance("Cursor", [
+        "/add-plugin skill-ledger",
+        "For local development, install this repository as a Cursor plugin so it can load .cursor-plugin/plugin.json.",
+      ]);
+      return;
+    }
+    if (["5", "copilot", "github copilot", "github copilot cli", "copilot cli"].includes(answer)) {
+      printInstallGuidance("GitHub Copilot CLI", [
+        "copilot plugin marketplace add <owner>/skill-ledger-marketplace",
+        "copilot plugin install skill-ledger@skill-ledger-marketplace",
+      ]);
+      return;
+    }
+    if (["6", "kimi", "kimi code"].includes(answer)) {
+      printInstallGuidance("Kimi Code", [
+        "/plugins install https://github.com/<owner>/skill-ledger",
+      ]);
+      return;
+    }
+    if (answer === "7" || answer === "gemini") {
+      printInstallGuidance("Gemini", [
+        "gemini extensions install https://github.com/<owner>/skill-ledger",
+      ]);
+      return;
+    }
+    if (answer === "8" || answer === "pi") {
+      printInstallGuidance("Pi", [
+        "pi install git:github.com/<owner>/skill-ledger",
+        "For local development: pi -e /path/to/skill-ledger",
+      ]);
+      return;
+    }
+    if (answer === "9" || answer === "antigravity" || answer === "agy") {
+      printInstallGuidance("Antigravity", [
+        "agy plugin install https://github.com/<owner>/skill-ledger",
+        "This is an install-route compatibility surface; verify with a fresh Antigravity session before treating it as fully validated.",
+      ]);
+      return;
+    }
+    if (["10", "factory", "factory droid", "droid"].includes(answer)) {
+      printInstallGuidance("Factory Droid", [
+        "droid plugin marketplace add https://github.com/<owner>/skill-ledger",
+        "droid plugin install skill-ledger@skill-ledger",
+      ]);
+      return;
+    }
     if (answer === "q" || answer === "quit" || answer === "cancel") {
       console.log("Cancelled.");
       return;
@@ -60,6 +123,11 @@ async function showQuickInstallMenu() {
   } finally {
     rl.close();
   }
+}
+
+function printInstallGuidance(toolName, commands) {
+  console.log(`${toolName} install guidance:`);
+  for (const command of commands) console.log(`  ${command}`);
 }
 
 async function startRun(options) {
@@ -122,19 +190,30 @@ async function finishRun(options) {
     event: "task_end",
     runId,
   });
-  printJson({ recorded: true, event });
+  if (options["no-report"] === "true") {
+    printJson({ recorded: true, event });
+    return;
+  }
+
+  const reportOutput = await writeReportFile({ runId, cwd, output: options.output });
+  printJson({ recorded: true, event, reportOutput });
 }
 
 async function writeReport(options) {
   const runId = required(options, "run-id");
   const cwd = path.resolve(options.cwd || process.cwd());
+  const output = await writeReportFile({ runId, cwd, output: options.output });
+  printJson({ output });
+}
+
+async function writeReportFile({ runId, cwd, output }) {
   const events = await readEvents(logPath(runId, cwd));
   const summary = summarizeRun(events);
   const markdown = renderChineseMarkdownReport(summary);
-  const output = path.resolve(cwd, options.output || path.join(auditHome(cwd), "reports", `${runId}.md`));
-  await mkdir(path.dirname(output), { recursive: true });
-  await writeFile(output, markdown);
-  printJson({ output });
+  const reportOutput = path.resolve(cwd, output || path.join(auditHome(cwd), "reports", `${runId}.md`));
+  await mkdir(path.dirname(reportOutput), { recursive: true });
+  await writeFile(reportOutput, markdown);
+  return reportOutput;
 }
 
 async function installOpenCode(options) {
@@ -247,7 +326,7 @@ function usage(exitCode) {
   node scripts/skill-ledger.mjs start --run-id <id> --harness <name> --cwd <path> --skills <skills-dir>
   node scripts/skill-ledger.mjs call --run-id <id> --skill <name> [--evidence self_reported] [--reason <text>]
   node scripts/skill-ledger.mjs note --run-id <id> --note <text>
-  node scripts/skill-ledger.mjs finish --run-id <id>
+  node scripts/skill-ledger.mjs finish --run-id <id> [--no-report] [--output <report.md>]
   node scripts/skill-ledger.mjs report --run-id <id> [--output <report.md>]
   node scripts/skill-ledger.mjs install-opencode [--config <opencode.json>] [--plugin <plugin-spec>]
   node scripts/skill-ledger.mjs install-codex [--marketplace <marketplace.json>] [--skip-codex-add]`);

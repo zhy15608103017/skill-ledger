@@ -1,6 +1,6 @@
 {
   "name": "skill-ledger",
-  "version": "0.1.0",
+  "version": "0.1.1",
   "description": "Record skill usage and generate Chinese Markdown reports.",
   "author": {
     "name": "Local developer"
@@ -15,11 +15,11 @@
   "sessionStart": {
     "skill": "using-skill-audit"
   },
-  "skillInstructions": "Skill Audit reports must be written in Chinese Markdown. Before using another skill, record it with `node <plugin-root>/scripts/skill-ledger.mjs call --run-id <runId> --skill <skill-name> --evidence self_reported --reason <Chinese reason>`. Use Kimi Code's native tools for shell commands and file access.",
+  "skillInstructions": "Skill Ledger reports must be written in Chinese Markdown. Before using another skill, record it with `node <plugin-root>/scripts/skill-ledger.mjs call --run-id <runId> --skill <skill-name> --evidence self_reported --reason <Chinese reason>`. At the end of the task, run `node <plugin-root>/scripts/skill-ledger.mjs finish --run-id <runId>` to generate the report. Use Kimi Code's native tools for shell commands and file access.",
   "interface": {
     "displayName": "Skill Ledger",
     "shortDescription": "Record skill usage and generate Chinese audit reports.",
-    "longDescription": "Tracks discovered and called skills during a task, then writes a Chinese Markdown report for skill tuning.",
+    "longDescription": "Tracks discovered and called skills during a task, then writes a Chinese Markdown report for skill tuning across Kimi Code and other coding agents.",
     "developerName": "Local developer",
     "capabilities": [
       "Interactive",

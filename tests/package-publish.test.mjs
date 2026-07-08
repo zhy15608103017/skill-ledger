@@ -14,4 +14,19 @@ test("package metadata is ready for npm and git distribution", async () => {
   assert.match(readme, /skill-ledger/);
   assert.match(readme, /npm/);
   assert.match(readme, /git\+https/);
+  for (const platform of [
+    "Claude Code",
+    "Antigravity",
+    "Codex App",
+    "Codex CLI",
+    "Cursor",
+    "Factory Droid",
+    "GitHub Copilot CLI",
+    "Kimi Code",
+    "OpenCode",
+    "Pi",
+    "Gemini",
+  ]) {
+    assert.match(readme, new RegExp(platform.replace(/[.*+?^${}()|[\]\\]/g, "\\$&")));
+  }
 });

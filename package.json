@@ -1,6 +1,6 @@
 {
   "name": "skill-ledger",
-  "version": "0.1.0",
+  "version": "0.1.1",
   "description": "Cross-harness skill usage auditing with Chinese Markdown reports",
   "type": "module",
   "main": ".opencode/plugins/skill-ledger.js",
@@ -12,10 +12,14 @@
     "audit": "node scripts/skill-ledger.mjs"
   },
   "files": [
+    ".claude-plugin",
     ".codex-plugin",
+    ".cursor-plugin",
+    ".agents",
     ".kimi-plugin",
     ".opencode",
     ".pi",
+    "hooks",
     "core",
     "docs",
     "scripts",
@@ -35,8 +39,14 @@
   "keywords": [
     "skills",
     "audit",
+    "claude-code",
     "codex",
+    "copilot-cli",
+    "cursor",
+    "gemini",
+    "kimi",
     "opencode",
+    "pi",
     "agents"
   ],
   "pi": {

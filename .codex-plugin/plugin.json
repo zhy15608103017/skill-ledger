@@ -1,6 +1,6 @@
 {
   "name": "skill-ledger",
-  "version": "0.1.0",
+  "version": "0.1.1",
   "description": "Cross-harness skill usage auditing with Chinese Markdown reports.",
   "author": {
     "name": "Local developer"
@@ -17,7 +17,7 @@
   "interface": {
     "displayName": "Skill Ledger",
     "shortDescription": "Record skill usage and generate Chinese audit reports.",
-    "longDescription": "Skill Audit records which skills were discovered and called during a task, then writes a Chinese Markdown report for skill tuning across Codex, OpenCode, Gemini, Kimi, and related coding agents.",
+    "longDescription": "Skill Ledger records which skills were discovered and called during a task, then writes a Chinese Markdown report for skill tuning across Codex, OpenCode, Claude Code, Cursor, Copilot CLI, Gemini, Kimi Code, Pi, Antigravity, Factory Droid, and related coding agents.",
     "developerName": "Local developer",
     "category": "Developer Tools",
     "capabilities": [

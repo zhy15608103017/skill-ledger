@@ -1,0 +1,20 @@
+{
+  "name": "skill-ledger",
+  "displayName": "Skill Ledger",
+  "description": "Cross-harness skill usage auditing with Chinese Markdown reports.",
+  "version": "0.1.1",
+  "author": {
+    "name": "Local developer"
+  },
+  "homepage": "https://github.com/<owner>/skill-ledger",
+  "repository": "https://github.com/<owner>/skill-ledger",
+  "license": "MIT",
+  "keywords": [
+    "skills",
+    "audit",
+    "reports",
+    "developer-tools"
+  ],
+  "skills": "./skills/",
+  "hooks": "./hooks/hooks-cursor.json"
+}

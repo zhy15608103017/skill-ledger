@@ -13,19 +13,15 @@ description: Use when 需要根据 Skill Ledger 的运行结果生成中文 Mark
 
 1. 找到插件根目录：也就是包含 `scripts/skill-ledger.mjs` 的目录。
 2. 从之前 `using-skill-audit` 的启动命令输出，或 bootstrap 消息中，确定本次运行的 `runId`。
-3. 将这次运行标记为结束：
+3. 将这次运行标记为结束，并自动生成默认报告：
 
 ```bash
 node "<plugin-root>/scripts/skill-ledger.mjs" finish --run-id "<runId>"
 ```
 
-4. 生成报告：
+默认报告会写入 `<workspace>/.skill-ledger/reports/<runId>.md`。
 
-```bash
-node "<plugin-root>/scripts/skill-ledger.mjs" report --run-id "<runId>"
-```
-
-如果要指定输出路径：
+如果要重新生成报告，或指定输出路径：
 
 ```bash
 node "<plugin-root>/scripts/skill-ledger.mjs" report --run-id "<runId>" --output "<workspace>/.skill-ledger/reports/<name>.md"

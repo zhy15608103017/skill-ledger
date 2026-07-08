@@ -29,6 +29,6 @@ test("buildBootstrapText returns a superpowers-style resident bootstrap", () => 
   assert.match(text, /# Using Skill Ledger/);
   assert.match(text, /runId: run-1/);
   assert.match(text, /skill-ledger\.mjs"? call --run-id run-1/);
-  assert.match(text, /skill-ledger\.mjs"? report --run-id run-1/);
+  assert.match(text, /skill-ledger\.mjs"? finish --run-id run-1/);
   assert.match(text, /<\/EXTREMELY_IMPORTANT>\s*$/);
 });

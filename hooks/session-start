@@ -1,0 +1,70 @@
+#!/usr/bin/env node
+import { spawnSync } from "node:child_process";
+import { dirname, resolve } from "node:path";
+import { fileURLToPath } from "node:url";
+
+import { buildBootstrapText, readStartupSkillText } from "../core/bootstrap.mjs";
+
+const hookDir = dirname(fileURLToPath(import.meta.url));
+const pluginRoot = resolve(hookDir, "..");
+const harness = process.env.SKILL_LEDGER_HARNESS || detectHarness();
+const cwd = process.env.SKILL_LEDGER_CWD || process.cwd();
+
+try {
+  const start = startAuditRun();
+  const skillText = await readStartupSkillText(pluginRoot);
+  const bootstrap = buildBootstrapText({
+    runId: start.runId,
+    pluginRoot,
+    logFile: start.logFile,
+    harness,
+    skillText,
+  });
+
+  process.stdout.write(`${JSON.stringify(payloadForHarness(bootstrap), null, 2)}\n`);
+} catch (error) {
+  process.stderr.write(`${error.stack || error.message}\n`);
+  process.exit(1);
+}
+
+function startAuditRun() {
+  const result = spawnSync(
+    process.execPath,
+    [resolve(pluginRoot, "scripts", "skill-ledger.mjs"), "start", "--harness", harness, "--cwd", cwd],
+    {
+      cwd,
+      encoding: "utf8",
+      env: process.env,
+    },
+  );
+
+  if (result.status !== 0) {
+    throw new Error(result.stderr || result.stdout || "Failed to start Skill Ledger audit run.");
+  }
+
+  return JSON.parse(result.stdout);
+}
+
+function payloadForHarness(bootstrap) {
+  if (process.env.CURSOR_PLUGIN_ROOT || harness === "cursor") {
+    return { additional_context: bootstrap };
+  }
+
+  if (process.env.CLAUDE_PLUGIN_ROOT && !process.env.COPILOT_CLI && harness !== "copilot-cli") {
+    return {
+      hookSpecificOutput: {
+        hookEventName: "SessionStart",
+        additionalContext: bootstrap,
+      },
+    };
+  }
+
+  return { additionalContext: bootstrap };
+}
+
+function detectHarness() {
+  if (process.env.CURSOR_PLUGIN_ROOT) return "cursor";
+  if (process.env.COPILOT_CLI) return "copilot-cli";
+  if (process.env.CLAUDE_PLUGIN_ROOT) return "claude-code";
+  return "shell-hook";
+}

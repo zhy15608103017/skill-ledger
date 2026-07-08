@@ -1,0 +1,20 @@
+{
+  "name": "skill-ledger-dev",
+  "interface": {
+    "displayName": "Skill Ledger Dev"
+  },
+  "plugins": [
+    {
+      "name": "skill-ledger",
+      "source": {
+        "source": "url",
+        "url": "./"
+      },
+      "policy": {
+        "installation": "AVAILABLE",
+        "authentication": "ON_INSTALL"
+      },
+      "category": "Developer Tools"
+    }
+  ]
+}
