@@ -9,8 +9,11 @@ import { createInterface } from "node:readline/promises";
 import { stdin as input, stdout as output } from "node:process";
 
 import { appendEvent, readEvents, summarizeRun } from "../core/audit-log.mjs";
+import { writeActiveRun } from "../core/active-run.mjs";
 import { renderChineseMarkdownReport } from "../core/report-md.mjs";
 import { scanSkillRoots } from "../core/skill-scanner.mjs";
+import { collectSkillRoots } from "../core/skill-roots.mjs";
+import { formatLocalTimestampForFileName } from "../core/time-format.mjs";
 
 const command = process.argv[2];
 const args = parseArgs(process.argv.slice(3));
@@ -135,9 +138,12 @@ async function startRun(options) {
   const runId = options["run-id"] || createRunId();
   const logFile = logPath(runId, cwd);
   const configuredRoots = arrayOption(options.skills);
-  const skillRoots = configuredRoots.length
-    ? configuredRoots.map((item) => path.resolve(cwd, item))
-    : defaultSkillRoots(cwd);
+  const skillRoots = collectSkillRoots({
+    cwd,
+    pluginRoot,
+    explicitRoots: configuredRoots,
+    includeDefaults: options["only-skills"] !== "true" && options["skills-only"] !== "true",
+  });
   const discovered = await scanSkillRoots(skillRoots);
 
   await appendEvent(logFile, {
@@ -154,6 +160,14 @@ async function startRun(options) {
       skill,
     });
   }
+
+  await writeActiveRun({
+    auditHome: auditHome(cwd),
+    harness: options.harness || "unknown",
+    runId,
+    logFile,
+    cwd,
+  });
 
   printJson({ runId, logFile, discoveredCount: discovered.length });
 }
@@ -210,7 +224,8 @@ async function writeReportFile({ runId, cwd, output }) {
   const events = await readEvents(logPath(runId, cwd));
   const summary = summarizeRun(events);
   const markdown = renderChineseMarkdownReport(summary);
-  const reportOutput = path.resolve(cwd, output || path.join(auditHome(cwd), "reports", `${runId}.md`));
+  const defaultOutput = path.join(auditHome(cwd), "reports", `${formatLocalTimestampForFileName(new Date())}.md`);
+  const reportOutput = path.resolve(cwd, output || defaultOutput);
   await mkdir(path.dirname(reportOutput), { recursive: true });
   await writeFile(reportOutput, markdown);
   return reportOutput;
@@ -268,18 +283,6 @@ function defaultOpenCodeConfigPath() {
   return path.join(homedir(), ".config", "opencode", "opencode.json");
 }
 
-function defaultSkillRoots(cwd) {
-  const home = homedir();
-  return [
-    path.join(pluginRoot, "skills"),
-    path.join(cwd, ".codex", "skills"),
-    path.join(cwd, ".opencode", "skills"),
-    path.join(home, ".codex", "skills"),
-    path.join(home, ".agents", "skills"),
-    path.join(home, ".config", "opencode", "skills"),
-  ];
-}
-
 function arrayOption(value) {
   if (!value) return [];
   return Array.isArray(value) ? value : [value];
@@ -323,7 +326,7 @@ function runCommand(commandName, commandArgs) {
 
 function usage(exitCode) {
   console.error(`Usage:
-  node scripts/skill-ledger.mjs start --run-id <id> --harness <name> --cwd <path> --skills <skills-dir>
+  node scripts/skill-ledger.mjs start --run-id <id> --harness <name> --cwd <path> [--skills <skills-dir>] [--only-skills]
   node scripts/skill-ledger.mjs call --run-id <id> --skill <name> [--evidence self_reported] [--reason <text>]
   node scripts/skill-ledger.mjs note --run-id <id> --note <text>
   node scripts/skill-ledger.mjs finish --run-id <id> [--no-report] [--output <report.md>]

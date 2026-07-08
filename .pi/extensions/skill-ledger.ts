@@ -6,10 +6,10 @@ import type { ExtensionAPI } from "@earendil-works/pi-coding-agent";
 import { appendEvent } from "../../core/audit-log.mjs";
 import { buildBootstrapText, readStartupSkillText } from "../../core/bootstrap.mjs";
 import { scanSkillRoots } from "../../core/skill-scanner.mjs";
+import { collectSkillRoots } from "../../core/skill-roots.mjs";
 
 const extensionDir = dirname(fileURLToPath(import.meta.url));
 const packageRoot = resolve(extensionDir, "../..");
-const skillsDir = resolve(packageRoot, "skills");
 const bootstrapMarker = "The using-skill-audit skill content is included below";
 
 let cachedStartupSkill: string | undefined;
@@ -19,7 +19,7 @@ export default function skillLedgerPiExtension(pi: ExtensionAPI) {
   let activeRun: { runId: string; logFile: string } | undefined;
 
   pi.on("resources_discover", async () => ({
-    skillPaths: [skillsDir],
+    skillPaths: collectSkillRoots({ cwd: process.cwd(), pluginRoot: packageRoot }),
   }));
 
   pi.on("session_start", async () => {
@@ -56,6 +56,14 @@ export default function skillLedgerPiExtension(pi: ExtensionAPI) {
       timestamp: Date.now(),
     };
 
+    await appendEvent(activeRun.logFile, {
+      event: "skill_called",
+      runId: activeRun.runId,
+      skill: "using-skill-audit",
+      evidence: "context_observed",
+      reason: "Pi context hook injected using-skill-audit Skill content",
+    });
+
     const insertAt = firstNonCompactionSummaryIndex(event.messages);
     return {
       messages: [
@@ -72,7 +80,7 @@ async function startAuditRun() {
   const auditHome = process.env.SKILL_LEDGER_HOME || process.env.SKILL_AUDIT_HOME || resolve(cwd, ".skill-ledger");
   const runId = createRunId();
   const logFile = resolve(auditHome, "runs", `${runId}.jsonl`);
-  const skills = await scanSkillRoots([skillsDir]);
+  const skills = await scanSkillRoots(collectSkillRoots({ cwd, pluginRoot: packageRoot }));
 
   await appendEvent(logFile, {
     event: "task_start",

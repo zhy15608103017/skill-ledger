@@ -1,0 +1,198 @@
+#!/usr/bin/env node
+import { stdin } from "node:process";
+import { dirname, resolve } from "node:path";
+import { fileURLToPath } from "node:url";
+
+import { readActiveRun } from "../core/active-run.mjs";
+import { appendEvent } from "../core/audit-log.mjs";
+import { scanSkillRoots } from "../core/skill-scanner.mjs";
+import { collectSkillRoots } from "../core/skill-roots.mjs";
+
+const hookDir = dirname(fileURLToPath(import.meta.url));
+const pluginRoot = resolve(hookDir, "..");
+
+try {
+  const payload = parseJson(await readStdin()) || {};
+  const harness = process.env.SKILL_LEDGER_HARNESS || detectHarness();
+  const cwd = process.env.SKILL_LEDGER_CWD || stringValue(payload.cwd) || process.cwd();
+  const auditHome = process.env.SKILL_LEDGER_HOME || process.env.SKILL_AUDIT_HOME || resolve(cwd, ".skill-ledger");
+  const activeRun = await readActiveRun({ auditHome, harness });
+
+  if (!activeRun?.runId || !activeRun?.logFile) process.exit(0);
+  if (activeRun.cwd && !samePath(activeRun.cwd, cwd)) process.exit(0);
+
+  const tool = observedToolName(payload);
+  const skillName = observedSkillName(payload);
+
+  if (isSkillTool(tool) && skillName) {
+    await appendEvent(activeRun.logFile, {
+      event: "skill_called",
+      runId: activeRun.runId,
+      skill: skillName,
+      evidence: "native_observed",
+      reason: `${displayHarnessName(harness)} Skill tool hook`,
+    });
+    process.exit(0);
+  }
+
+  const contextSkills = await observedContextSkills(payload, { cwd });
+  for (const skill of contextSkills) {
+    await appendEvent(activeRun.logFile, {
+      event: "skill_called",
+      runId: activeRun.runId,
+      skill: skill.name,
+      evidence: "context_observed",
+      reason: `${displayHarnessName(harness)} context included ${skill.name} Skill content`,
+    });
+  }
+
+  if (contextSkills.length) process.exit(0);
+
+  if (tool) {
+    await appendEvent(activeRun.logFile, {
+      event: "tool_observed",
+      runId: activeRun.runId,
+      harness,
+      tool,
+      hookEvent: stringValue(payload.hook_event_name || payload.hookEventName || payload.event),
+      observation: "probe",
+    });
+  }
+} catch (error) {
+  process.stderr.write(`${error.stack || error.message}\n`);
+  process.exit(1);
+}
+
+function readStdin() {
+  return new Promise((resolvePromise, reject) => {
+    let content = "";
+    stdin.setEncoding("utf8");
+    stdin.on("data", (chunk) => {
+      content += chunk;
+    });
+    stdin.on("end", () => resolvePromise(content));
+    stdin.on("error", reject);
+  });
+}
+
+function parseJson(content) {
+  const text = String(content || "").trim();
+  if (!text) return {};
+  try {
+    return JSON.parse(text);
+  } catch {
+    return { raw: text };
+  }
+}
+
+function observedToolName(payload) {
+  const value =
+    payload.tool_name ||
+    payload.toolName ||
+    payload.tool?.name ||
+    payload.name ||
+    payload.input?.tool_name ||
+    payload.input?.toolName ||
+    payload.input?.tool?.name ||
+    payload.tool ||
+    payload.input?.tool;
+  return stringValue(value).trim();
+}
+
+function observedSkillName(payload) {
+  for (const value of possibleSkillValues(payload)) {
+    const name = normalizeSkillName(value);
+    if (name) return name;
+  }
+  return "";
+}
+
+function possibleSkillValues(payload) {
+  const containers = [
+    payload.tool_input,
+    payload.toolInput,
+    payload.input,
+    payload.args,
+    payload.arguments,
+    payload.tool_use,
+    payload.toolUse,
+  ];
+
+  return containers.flatMap((container) => {
+    const parsed = typeof container === "string" ? parseJson(container) : container;
+    if (!parsed) return [];
+    if (typeof parsed === "string") return [parsed];
+    return [parsed.skill, parsed.name, parsed.skillName, parsed.skill_name, parsed.id, parsed.command];
+  });
+}
+
+function normalizeSkillName(value) {
+  if (!value) return "";
+  if (typeof value === "object" && value.name) return normalizeSkillName(value.name);
+  const text = stringValue(value).trim();
+  if (!text) return "";
+  return text.startsWith("/") ? text.slice(1) : text;
+}
+
+function isSkillTool(tool) {
+  return ["skill", "skilltool"].includes(String(tool || "").trim().toLowerCase());
+}
+
+async function observedContextSkills(payload, { cwd }) {
+  const text = collectText(payload);
+  if (!text) return [];
+
+  const skills = await scanSkillRoots(collectSkillRoots({ cwd, pluginRoot }));
+  return skills.filter((skill) => {
+    return (
+      text.includes(`name: ${skill.name}`) ||
+      text.includes(`skills/${skill.name}/SKILL.md`) ||
+      text.includes(`skills\\${skill.name}\\SKILL.md`)
+    );
+  });
+}
+
+function collectText(value, seen = new Set()) {
+  if (!value) return "";
+  if (typeof value === "string") return value;
+  if (typeof value !== "object") return "";
+  if (seen.has(value)) return "";
+  seen.add(value);
+
+  if (Array.isArray(value)) return value.map((item) => collectText(item, seen)).join("\n");
+  return Object.values(value)
+    .map((item) => collectText(item, seen))
+    .join("\n");
+}
+
+function stringValue(value) {
+  if (value === undefined || value === null) return "";
+  if (typeof value === "object") return "";
+  return String(value);
+}
+
+function detectHarness() {
+  if (process.env.CURSOR_PLUGIN_ROOT) return "cursor";
+  if (process.env.COPILOT_CLI) return "copilot-cli";
+  if (process.env.CLAUDE_PLUGIN_ROOT) return "claude-code";
+  return "unknown";
+}
+
+function displayHarnessName(harness) {
+  const names = {
+    "claude-code": "Claude Code",
+    "copilot-cli": "GitHub Copilot CLI",
+    cursor: "Cursor",
+    gemini: "Gemini",
+    kimi: "Kimi Code",
+    pi: "Pi",
+  };
+  return names[harness] || harness || "unknown";
+}
+
+function samePath(left, right) {
+  const normalizedLeft = resolve(String(left || ""));
+  const normalizedRight = resolve(String(right || ""));
+  if (process.platform === "win32") return normalizedLeft.toLowerCase() === normalizedRight.toLowerCase();
+  return normalizedLeft === normalizedRight;
+}

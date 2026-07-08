@@ -1,5 +1,8 @@
+import { formatLocalTimestamp } from "./time-format.mjs";
+
 const EVIDENCE_LABELS = {
   native_observed: "原生事件观测（高置信度）",
+  context_observed: "上下文观测（较高置信度，确认 Skill 内容进入模型上下文）",
   self_reported: "模型自报告（中等置信度，未由宿主事件确认）",
   log_inferred: "日志推断（低到中等置信度）",
 };
@@ -13,8 +16,8 @@ export function renderChineseMarkdownReport(summary) {
     `- 运行 ID：${value(summary.runId)}`,
     `- 宿主工具：${value(summary.harness)}`,
     `- 工作目录：${value(summary.cwd)}`,
-    `- 开始时间：${value(summary.startedAt)}`,
-    `- 结束时间：${value(summary.finishedAt)}`,
+    `- 开始时间：${timeValue(summary.startedAt)}`,
+    `- 结束时间：${timeValue(summary.finishedAt)}`,
     `- 发现 Skills：${summary.discoveredSkills?.length || 0}`,
     `- 已调用 Skills：${summary.calledSkills?.length || 0}`,
     `- 未调用 Skills：${summary.notCalledSkills?.length || 0}`,
@@ -30,6 +33,7 @@ export function renderChineseMarkdownReport(summary) {
     "## 证据等级说明",
     "",
     "- 原生事件观测：宿主插件或生命周期事件直接记录到调用，置信度最高。",
+    "- 上下文观测：宿主 hook 确认 Skill 内容进入模型上下文，能证明加载但不等同于原生工具调用。",
     "- 模型自报告：模型按照审计指令主动记录调用，可信但没有宿主事件佐证。",
     "- 日志推断：从对话、日志或 transcript 中推断调用，适合补充线索而非单独定论。",
   ];
@@ -56,7 +60,7 @@ function skillCallTable(skills) {
         skill.name,
         skill.source,
         EVIDENCE_LABELS[skill.evidence] || skill.evidence,
-        skill.firstUsedAt,
+        timeValue(skill.firstUsedAt),
         skill.reason,
       ]
         .map(cell)
@@ -86,6 +90,10 @@ function possibleMissTable(skills) {
 
 function value(input) {
   return input || "未记录";
+}
+
+function timeValue(input) {
+  return input ? formatLocalTimestamp(input) : value(input);
 }
 
 function cell(input) {

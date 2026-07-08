@@ -5,6 +5,7 @@ import { fileURLToPath } from "node:url";
 import { appendEvent } from "../../core/audit-log.mjs";
 import { buildBootstrapText, readStartupSkillText } from "../../core/bootstrap.mjs";
 import { scanSkillRoots } from "../../core/skill-scanner.mjs";
+import { collectSkillRoots } from "../../core/skill-roots.mjs";
 
 const __dirname = path.dirname(fileURLToPath(import.meta.url));
 const pluginRoot = path.resolve(__dirname, "../..");
@@ -14,7 +15,7 @@ let startupSkillTextCache;
 export const SkillLedgerPlugin = async ({ directory } = {}) => {
   const workspaceDir = path.resolve(directory || process.cwd());
   const auditHome = process.env.SKILL_LEDGER_HOME || process.env.SKILL_AUDIT_HOME || path.join(workspaceDir, ".skill-ledger");
-  let skillRoots = [pluginSkillsDir];
+  let skillRoots = collectSkillRoots({ cwd: workspaceDir, pluginRoot });
   let started = false;
   let runId = "";
   let logFile = "";
@@ -32,8 +33,8 @@ export const SkillLedgerPlugin = async ({ directory } = {}) => {
       config.skills = config.skills || {};
       config.skills.paths = config.skills.paths || [];
       const existing = config.skills.paths.map((item) => normalizeSkillPath(item, workspaceDir)).filter(Boolean);
-      skillRoots = [...new Set([...existing, pluginSkillsDir])];
-      if (!config.skills.paths.includes(pluginSkillsDir)) config.skills.paths.push(pluginSkillsDir);
+      skillRoots = collectSkillRoots({ cwd: workspaceDir, pluginRoot, explicitRoots: existing });
+      if (!existing.some((item) => samePath(item, pluginSkillsDir))) config.skills.paths.push(pluginSkillsDir);
     },
 
     "experimental.chat.messages.transform": async (_input, output) => {
@@ -98,6 +99,13 @@ function normalizeSkillPath(value, workspaceDir) {
   if (value.startsWith("~/")) return path.join(process.env.HOME || process.env.USERPROFILE || "", value.slice(2));
   if (path.isAbsolute(value)) return value;
   return path.resolve(workspaceDir, value);
+}
+
+function samePath(left, right) {
+  const normalizedLeft = path.resolve(String(left || ""));
+  const normalizedRight = path.resolve(String(right || ""));
+  if (process.platform === "win32") return normalizedLeft.toLowerCase() === normalizedRight.toLowerCase();
+  return normalizedLeft === normalizedRight;
 }
 
 function createRunId() {

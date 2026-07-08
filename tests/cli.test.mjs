@@ -5,6 +5,8 @@ import path from "node:path";
 import { spawnSync } from "node:child_process";
 import test from "node:test";
 
+import { readEvents } from "../core/audit-log.mjs";
+
 const script = path.resolve("scripts", "skill-ledger.mjs");
 
 test("CLI starts a run, records a skill call, and writes a Chinese report", async () => {
@@ -40,6 +42,125 @@ test("CLI starts a run, records a skill call, and writes a Chinese report", asyn
   assert.match(markdown, /用户请求创建新功能/);
 });
 
+test("CLI start appends explicit skill roots to default discovery roots", async () => {
+  const cwd = await mkdtemp(path.join(tmpdir(), "skill-ledger-cli-roots-"));
+  const extraSkillDir = path.join(cwd, "extra-skills", "extra-review");
+  await mkdir(extraSkillDir, { recursive: true });
+  await writeFile(
+    path.join(extraSkillDir, "SKILL.md"),
+    "---\nname: extra-review\ndescription: Extra review skill\n---\n# Extra Review\n",
+  );
+
+  run(
+    [
+      "start",
+      "--run-id",
+      "append-roots",
+      "--harness",
+      "codex",
+      "--cwd",
+      cwd,
+      "--skills",
+      path.join(cwd, "extra-skills"),
+    ],
+    cwd,
+  );
+
+  const events = await readEvents(path.join(cwd, ".skill-ledger", "runs", "append-roots.jsonl"));
+  const discoveredNames = events
+    .filter((event) => event.event === "skill_discovered")
+    .map((event) => event.skill.name);
+
+  assert.ok(discoveredNames.includes("extra-review"));
+  assert.ok(discoveredNames.includes("using-skill-audit"));
+});
+
+test("CLI start discovers additional roots from SKILL_LEDGER_SKILL_ROOTS", async () => {
+  const cwd = await mkdtemp(path.join(tmpdir(), "skill-ledger-cli-env-roots-"));
+  const envSkillDir = path.join(cwd, "env-skills", "env-review");
+  await mkdir(envSkillDir, { recursive: true });
+  await writeFile(
+    path.join(envSkillDir, "SKILL.md"),
+    "---\nname: env-review\ndescription: Env review skill\n---\n# Env Review\n",
+  );
+
+  run(["start", "--run-id", "env-roots", "--harness", "codex", "--cwd", cwd], cwd, {
+    env: { SKILL_LEDGER_SKILL_ROOTS: path.join(cwd, "env-skills") },
+  });
+
+  const events = await readEvents(path.join(cwd, ".skill-ledger", "runs", "env-roots.jsonl"));
+  const discoveredNames = events
+    .filter((event) => event.event === "skill_discovered")
+    .map((event) => event.skill.name);
+
+  assert.ok(discoveredNames.includes("env-review"));
+});
+
+test("CLI start discovers additional roots from SKILL_LEDGER_SKILLS alias", async () => {
+  const cwd = await mkdtemp(path.join(tmpdir(), "skill-ledger-cli-env-alias-"));
+  const envSkillDir = path.join(cwd, "alias-skills", "alias-review");
+  await mkdir(envSkillDir, { recursive: true });
+  await writeFile(
+    path.join(envSkillDir, "SKILL.md"),
+    "---\nname: alias-review\ndescription: Alias review skill\n---\n# Alias Review\n",
+  );
+
+  run(["start", "--run-id", "alias-roots", "--harness", "codex", "--cwd", cwd], cwd, {
+    env: { SKILL_LEDGER_SKILLS: path.join(cwd, "alias-skills") },
+  });
+
+  const events = await readEvents(path.join(cwd, ".skill-ledger", "runs", "alias-roots.jsonl"));
+  const discoveredNames = events
+    .filter((event) => event.event === "skill_discovered")
+    .map((event) => event.skill.name);
+
+  assert.ok(discoveredNames.includes("alias-review"));
+});
+
+test("CLI start --only-skills restricts discovery to supplied roots", async () => {
+  const cwd = await mkdtemp(path.join(tmpdir(), "skill-ledger-cli-only-roots-"));
+  const onlySkillDir = path.join(cwd, "only-skills", "only-review");
+  const envSkillDir = path.join(cwd, "env-skills", "env-only-review");
+  await mkdir(onlySkillDir, { recursive: true });
+  await mkdir(envSkillDir, { recursive: true });
+  await writeFile(
+    path.join(onlySkillDir, "SKILL.md"),
+    "---\nname: only-review\ndescription: Only review skill\n---\n# Only Review\n",
+  );
+  await writeFile(
+    path.join(envSkillDir, "SKILL.md"),
+    "---\nname: env-only-review\ndescription: Env only review skill\n---\n# Env Only Review\n",
+  );
+
+  run(
+    [
+      "start",
+      "--run-id",
+      "only-roots",
+      "--harness",
+      "codex",
+      "--cwd",
+      cwd,
+      "--skills",
+      path.join(cwd, "only-skills"),
+      "--only-skills",
+    ],
+    cwd,
+    {
+      env: { SKILL_LEDGER_SKILL_ROOTS: path.join(cwd, "env-skills") },
+    },
+  );
+
+  const events = await readEvents(path.join(cwd, ".skill-ledger", "runs", "only-roots.jsonl"));
+  const discoveredNames = events
+    .filter((event) => event.event === "skill_discovered")
+    .map((event) => event.skill.name);
+
+  assert.ok(discoveredNames.includes("only-review"));
+  assert.ok(!discoveredNames.includes("env-only-review"));
+  assert.ok(!discoveredNames.includes("using-skill-audit"));
+});
+
 test("CLI finish writes the default report unless disabled", async () => {
   const cwd = await mkdtemp(path.join(tmpdir(), "skill-ledger-finish-report-"));
   const skillDir = path.join(cwd, "skills", "brainstorming");
@@ -63,12 +184,16 @@ test("CLI finish writes the default report unless disabled", async () => {
   ], cwd);
 
   const result = run(["finish", "--run-id", "finish-report"], cwd);
-  const output = path.join(cwd, ".skill-ledger", "reports", "finish-report.md");
+  const reportOutput = JSON.parse(result.stdout).reportOutput;
+  const output = path.resolve(reportOutput);
   const markdown = await readFile(output, "utf8");
 
-  assert.match(result.stdout, /finish-report\.md/);
+  assert.match(path.basename(output), /^\d{4}-\d{2}-\d{2} \d{2} \d{2} \d{2}\.md$/);
+  assert.notEqual(path.basename(output), "finish-report.md");
   assert.match(markdown, /finish-report/);
   assert.match(markdown, /auto report/);
+  assert.match(markdown, /\d{4}-\d{2}-\d{2} \d{2}:\d{2}:\d{2}/);
+  assert.doesNotMatch(markdown, /\d{4}-\d{2}-\d{2}T\d{2}:/);
 
   const noReportCwd = await mkdtemp(path.join(tmpdir(), "skill-ledger-finish-no-report-"));
   const noReportSkillDir = path.join(noReportCwd, "skills", "brainstorming");
@@ -160,8 +285,10 @@ function run(args, cwd, options = {}) {
     input: options.input,
     env: {
       ...process.env,
-      ...options.env,
       SKILL_LEDGER_HOME: path.join(cwd, ".skill-ledger"),
+      SKILL_LEDGER_SKILL_ROOTS: "",
+      SKILL_LEDGER_SKILLS: "",
+      ...options.env,
     },
   });
 

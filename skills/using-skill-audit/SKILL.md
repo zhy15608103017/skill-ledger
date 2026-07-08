@@ -41,7 +41,7 @@ Before using any other skill, record it:
 node "<plugin-root>/scripts/skill-ledger.mjs" call --run-id "<runId>" --skill "<skill-name>" --evidence self_reported --reason "<Chinese reason>"
 ```
 
-Use `native_observed` only when the host adapter directly observed the skill call. Use `self_reported` when the model records the call because this skill required it. Use `log_inferred` only when reconstructing an audit from logs or a transcript.
+Use `native_observed` only when the host adapter directly observed the skill call. Use `context_observed` when a host hook confirms the Skill content was loaded into model context but did not expose a native Skill tool call. Use `self_reported` when the model records the call because this skill required it. Use `log_inferred` only when reconstructing an audit from logs or a transcript.
 
 ## Finish
 
@@ -55,7 +55,9 @@ Use `--no-report` only when the caller explicitly wants to close the run without
 
 ## Skill Roots
 
-If the host exposes skill directories, pass each one with repeated `--skills` flags during `start`. Without explicit roots, the CLI scans common local locations such as the plugin's own `skills/`, `.codex/skills`, `.opencode/skills`, `~/.codex/skills`, `~/.agents/skills`, and `~/.config/opencode/skills`.
+If the host exposes skill directories, pass each one with repeated `--skills` flags during `start`, or set `SKILL_LEDGER_SKILL_ROOTS` / `SKILL_LEDGER_SKILLS` for host adapters that start the run for you. Explicit roots are appended to the shared defaults. Use `--only-skills` only when you intentionally want to restrict discovery to the supplied roots only.
+
+The shared defaults cover the plugin's own `skills/`, workspace skill directories, user-level skill directories, Codex plugin cache, and common local roots such as `.cc-switch` and `understand-anything`.
 
 Missing roots must not block the user's main task. The report should explain that skill discovery depends on which roots the host environment exposed.
 

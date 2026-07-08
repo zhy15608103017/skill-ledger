@@ -16,10 +16,20 @@ node scripts/skill-ledger.mjs call --run-id <runId> --skill <skill-name> --evide
 node scripts/skill-ledger.mjs finish --run-id <runId>
 ```
 
+## Skill Discovery Roots
+
+All runtime adapters use the shared skill-root discovery rules. The default
+roots include bundled skills, workspace skills, user-level skills, Codex plugin
+cache, `.cc-switch`, and `understand-anything`. Add host-specific roots with
+repeated `--skills` flags or `SKILL_LEDGER_SKILL_ROOTS` / `SKILL_LEDGER_SKILLS`.
+Those roots are appended to the defaults; use `--only-skills` when you need an
+explicit-only scan.
+
 ## Evidence
 
 - `native_observed`: host adapter directly observed the call.
+- `context_observed`: host hook confirmed Skill content entered model context.
 - `self_reported`: the model recorded the call by instruction.
 - `log_inferred`: the call was reconstructed from logs or transcript.
 
-`finish` writes the default report to `.skill-ledger/reports/<runId>.md`. Reports are always Chinese Markdown. Use `report` when regenerating a report or writing it to a custom output path.
+`finish` writes the default report to `.skill-ledger/reports/<local timestamp>.md`. Reports are always Chinese Markdown. Use `report` when regenerating a report or writing it to a custom output path.

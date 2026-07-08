@@ -47,8 +47,9 @@ export function summarizeRun(events) {
       discoveredByName.set(event.skill.name, event.skill);
     }
     if (event.event === "skill_called") {
-      const name = typeof event.skill === "string" ? event.skill : event.skill?.name;
-      if (!name) continue;
+      const rawName = typeof event.skill === "string" ? event.skill : event.skill?.name;
+      if (!rawName) continue;
+      const name = canonicalSkillName(rawName, discoveredByName);
       const discovered = discoveredByName.get(name) || {};
       const current = {
         name,
@@ -95,7 +96,8 @@ function evidenceRank(evidence) {
   const ranks = {
     log_inferred: 1,
     self_reported: 2,
-    native_observed: 3,
+    context_observed: 3,
+    native_observed: 4,
   };
   return ranks[evidence] || 0;
 }
@@ -105,4 +107,13 @@ function compareSkills(left, right) {
   const rightSource = right.source || "";
   if (leftSource !== rightSource) return leftSource.localeCompare(rightSource);
   return left.name.localeCompare(right.name);
+}
+
+function canonicalSkillName(name, discoveredByName) {
+  if (discoveredByName.has(name)) return name;
+
+  const suffix = String(name).includes(":") ? String(name).slice(String(name).lastIndexOf(":") + 1) : "";
+  if (suffix && discoveredByName.has(suffix)) return suffix;
+
+  return name;
 }

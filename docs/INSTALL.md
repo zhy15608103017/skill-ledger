@@ -318,3 +318,18 @@ npx skill-ledger
 ## 使用
 
 安装后，在新会话里请求开启 skill ledger，或直接使用 `using-skill-audit`。报告会写到工作区的 `.skill-ledger/reports/`，并且默认是中文 Markdown。
+
+## Skill Roots
+
+Skill Ledger 的 CLI、OpenCode 插件、Claude/Cursor/Copilot hooks、Pi 扩展和共享观察 hook 都使用同一套 skill roots 发现规则。默认会扫描内置 `skills/`、工作区 skills、用户级 skills、Codex 插件缓存、`.cc-switch`、`understand-anything` 等常见位置。
+
+如果某个宿主把 skills 放在额外目录，可以通过重复 `--skills <dir>` 传入，或设置 `SKILL_LEDGER_SKILL_ROOTS` / `SKILL_LEDGER_SKILLS`。这些 roots 会追加到默认 roots。只有在需要完全限制扫描范围时，才使用 `--only-skills`。
+
+## 观测能力
+
+- OpenCode 通过插件 `tool.execute.after` 观察原生 `skill` 工具调用，记录为 `native_observed`。
+- Claude Code 通过 `PostToolUse` 调用 `hooks/observe-skill-call`；原生 `Skill` 工具调用记录为 `native_observed`。
+- Cursor 和 GitHub Copilot CLI 可将 tool-use payload 送入 `hooks/observe-skill-call`。如果 payload 暴露 `Skill`/`skill` 工具，会记录为 `native_observed`；否则记录 `tool_observed` 探针事件，用于后续适配。
+- Gemini 类 hooks 可以把模型上下文 payload 送入 `hooks/observe-skill-call`；当 payload 中出现 bundled `SKILL.md` 内容时记录为 `context_observed`。
+- Pi 在 context 注入 `using-skill-audit` bootstrap 时记录 `context_observed`。
+- Codex 和 Kimi 当前不承诺原生 Skill 调用观测；可继续使用 `self_reported`，或在宿主暴露 tool/context hook 后接入 `hooks/observe-skill-call`。

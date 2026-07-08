@@ -1,5 +1,5 @@
 import assert from "node:assert/strict";
-import { mkdtemp, readdir } from "node:fs/promises";
+import { mkdir, mkdtemp, readdir, writeFile } from "node:fs/promises";
 import { tmpdir } from "node:os";
 import path from "node:path";
 import test from "node:test";
@@ -79,6 +79,49 @@ test("OpenCode adapter records native skill tool calls", async () => {
   } finally {
     if (previousHome === undefined) delete process.env.SKILL_LEDGER_HOME;
     else process.env.SKILL_LEDGER_HOME = previousHome;
+  }
+});
+
+test("OpenCode adapter discovers shared environment skill roots", async () => {
+  const cwd = await mkdtemp(path.join(tmpdir(), "skill-ledger-opencode-env-roots-"));
+  const auditHome = path.join(cwd, ".skill-ledger");
+  const envRoot = path.join(cwd, "env-skills");
+  const envSkillDir = path.join(envRoot, "env-opencode");
+  const previousHome = process.env.SKILL_LEDGER_HOME;
+  const previousRoots = process.env.SKILL_LEDGER_SKILL_ROOTS;
+
+  await mkdir(envSkillDir, { recursive: true });
+  await writeFile(
+    path.join(envSkillDir, "SKILL.md"),
+    "---\nname: env-opencode\ndescription: Env OpenCode skill\n---\n# Env OpenCode\n",
+  );
+
+  try {
+    process.env.SKILL_LEDGER_HOME = auditHome;
+    process.env.SKILL_LEDGER_SKILL_ROOTS = envRoot;
+
+    const plugin = await SkillLedgerPlugin({ directory: cwd });
+    await plugin.config({ skills: { paths: [] } });
+
+    const output = {
+      messages: [
+        {
+          info: { role: "user" },
+          parts: [{ type: "text", text: "hello" }],
+        },
+      ],
+    };
+
+    await plugin["experimental.chat.messages.transform"]({}, output);
+
+    const runFiles = await readdir(path.join(auditHome, "runs"));
+    const events = await readEvents(path.join(auditHome, "runs", runFiles[0]));
+    assert.ok(events.some((event) => event.event === "skill_discovered" && event.skill.name === "env-opencode"));
+  } finally {
+    if (previousHome === undefined) delete process.env.SKILL_LEDGER_HOME;
+    else process.env.SKILL_LEDGER_HOME = previousHome;
+    if (previousRoots === undefined) delete process.env.SKILL_LEDGER_SKILL_ROOTS;
+    else process.env.SKILL_LEDGER_SKILL_ROOTS = previousRoots;
   }
 });
 
