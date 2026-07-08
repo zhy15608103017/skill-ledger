@@ -50,15 +50,25 @@ export function summarizeRun(events) {
       const name = typeof event.skill === "string" ? event.skill : event.skill?.name;
       if (!name) continue;
       const discovered = discoveredByName.get(name) || {};
+      const current = {
+        name,
+        description: discovered.description || event.skill?.description || "",
+        source: discovered.source || event.skill?.source || "",
+        evidence: event.evidence || "self_reported",
+        firstUsedAt: event.time || "",
+        reason: event.reason || "",
+      };
       if (!calledByName.has(name)) {
-        calledByName.set(name, {
-          name,
-          description: discovered.description || event.skill?.description || "",
-          source: discovered.source || event.skill?.source || "",
-          evidence: event.evidence || "self_reported",
-          firstUsedAt: event.time || "",
-          reason: event.reason || "",
-        });
+        calledByName.set(name, current);
+        continue;
+      }
+
+      const existing = calledByName.get(name);
+      if (evidenceRank(current.evidence) > evidenceRank(existing.evidence)) {
+        existing.evidence = current.evidence;
+        existing.reason = current.reason || existing.reason;
+        existing.description = existing.description || current.description;
+        existing.source = existing.source || current.source;
       }
     }
   }
@@ -79,6 +89,15 @@ export function summarizeRun(events) {
     notCalledSkills,
     notes,
   };
+}
+
+function evidenceRank(evidence) {
+  const ranks = {
+    log_inferred: 1,
+    self_reported: 2,
+    native_observed: 3,
+  };
+  return ranks[evidence] || 0;
 }
 
 function compareSkills(left, right) {

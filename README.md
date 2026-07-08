@@ -28,6 +28,10 @@ OpenCode can load the repository directly:
 
 Codex local installation after cloning:
 
+Codex quick installer is currently Windows only because it uses the bundled
+PowerShell script. On macOS/Linux, use the host-owned Codex plugin install flow
+or run the audit CLI commands manually until a Node-based installer is added.
+
 ```powershell
 git clone https://github.com/<owner>/skill-ledger.git "$HOME\plugins\skill-ledger"
 cd "$HOME\plugins\skill-ledger"

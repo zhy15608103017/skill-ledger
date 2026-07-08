@@ -1,5 +1,6 @@
 import { access, readdir, readFile, stat } from "node:fs/promises";
 import path from "node:path";
+import { parse as parseYaml } from "yaml";
 
 const SKILL_FILE = "SKILL.md";
 
@@ -66,15 +67,20 @@ function extractFrontmatter(content) {
   const match = content.match(/^---\r?\n([\s\S]*?)\r?\n---/);
   if (!match) return {};
 
-  const result = {};
-  for (const line of match[1].split(/\r?\n/)) {
-    const separator = line.indexOf(":");
-    if (separator <= 0) continue;
-    const key = line.slice(0, separator).trim();
-    const value = line.slice(separator + 1).trim().replace(/^["']|["']$/g, "");
-    if (key === "name" || key === "description") result[key] = value;
+  try {
+    const parsed = parseYaml(match[1]) || {};
+    return {
+      name: frontmatterString(parsed.name),
+      description: frontmatterString(parsed.description),
+    };
+  } catch {
+    return {};
   }
-  return result;
+}
+
+function frontmatterString(value) {
+  if (value === undefined || value === null) return "";
+  return String(value).trim();
 }
 
 async function exists(filePath) {

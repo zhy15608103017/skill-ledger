@@ -7,6 +7,9 @@ Codex CLI, Cursor, Factory Droid, GitHub Copilot CLI, Kimi Code, OpenCode, Pi,
 and Gemini.
 
 - Codex and OpenCode have local PowerShell quick installers in `scripts/`.
+  Codex quick installer is currently Windows only; macOS/Linux users should use
+  the host-owned Codex plugin install flow or run the audit CLI commands
+  manually until a Node-based installer is added.
 - Claude Code, Cursor, and GitHub Copilot CLI use the bundled `hooks/`
   session-start bootstrap.
 - Gemini uses `gemini-extension.json` plus `GEMINI.md`.
@@ -38,6 +41,9 @@ powershell -ExecutionPolicy Bypass -File scripts/install-droid.ps1
 ### Codex App / Codex CLI
 
 本地开发安装：
+
+Codex quick installer is currently Windows only because it uses
+`scripts/install-codex.ps1`.
 
 ```powershell
 powershell -ExecutionPolicy Bypass -File scripts/install-codex.ps1

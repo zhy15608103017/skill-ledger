@@ -49,6 +49,9 @@
     "pi",
     "agents"
   ],
+  "dependencies": {
+    "yaml": "^2.9.0"
+  },
   "pi": {
     "extensions": [
       "./.pi/extensions/skill-ledger.ts"

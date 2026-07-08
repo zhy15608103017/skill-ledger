@@ -51,3 +51,68 @@ test("OpenCode adapter registers skills, injects bootstrap, and starts a run", a
     else process.env.SKILL_LEDGER_HOME = previousHome;
   }
 });
+
+test("OpenCode adapter records native skill tool calls", async () => {
+  const cwd = await mkdtemp(path.join(tmpdir(), "skill-ledger-opencode-native-"));
+  const auditHome = path.join(cwd, ".skill-ledger");
+  const previousHome = process.env.SKILL_LEDGER_HOME;
+  process.env.SKILL_LEDGER_HOME = auditHome;
+
+  try {
+    const plugin = await SkillLedgerPlugin({ directory: cwd });
+    await plugin.config({ skills: { paths: [] } });
+
+    await plugin["tool.execute.after"]({ tool: "skill" }, { args: { name: "brainstorming" } });
+
+    const runFiles = await readdir(path.join(auditHome, "runs"));
+    assert.equal(runFiles.length, 1);
+    const events = await readEvents(path.join(auditHome, "runs", runFiles[0]));
+    assert.ok(
+      events.some(
+        (event) =>
+          event.event === "skill_called" &&
+          event.skill === "brainstorming" &&
+          event.evidence === "native_observed" &&
+          /OpenCode/.test(event.reason),
+      ),
+    );
+  } finally {
+    if (previousHome === undefined) delete process.env.SKILL_LEDGER_HOME;
+    else process.env.SKILL_LEDGER_HOME = previousHome;
+  }
+});
+
+test("OpenCode adapter honors SKILL_LEDGER=off", async () => {
+  const cwd = await mkdtemp(path.join(tmpdir(), "skill-ledger-opencode-off-"));
+  const auditHome = path.join(cwd, ".skill-ledger");
+  const previousHome = process.env.SKILL_LEDGER_HOME;
+  const previousEnabled = process.env.SKILL_LEDGER;
+  process.env.SKILL_LEDGER_HOME = auditHome;
+  process.env.SKILL_LEDGER = "off";
+
+  try {
+    const plugin = await SkillLedgerPlugin({ directory: cwd });
+    await plugin.config({ skills: { paths: [] } });
+
+    const output = {
+      messages: [
+        {
+          info: { role: "user" },
+          parts: [{ type: "text", text: "hello" }],
+        },
+      ],
+    };
+
+    await plugin["experimental.chat.messages.transform"]({}, output);
+    await plugin["tool.execute.after"]({ tool: "skill" }, { args: { name: "brainstorming" } });
+
+    assert.equal(output.messages[0].parts.length, 1);
+    assert.equal(output.messages[0].parts[0].text, "hello");
+    await assert.rejects(readdir(path.join(auditHome, "runs")), { code: "ENOENT" });
+  } finally {
+    if (previousHome === undefined) delete process.env.SKILL_LEDGER_HOME;
+    else process.env.SKILL_LEDGER_HOME = previousHome;
+    if (previousEnabled === undefined) delete process.env.SKILL_LEDGER;
+    else process.env.SKILL_LEDGER = previousEnabled;
+  }
+});

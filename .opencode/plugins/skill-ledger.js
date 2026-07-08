@@ -19,6 +19,14 @@ export const SkillLedgerPlugin = async ({ directory } = {}) => {
   let runId = "";
   let logFile = "";
 
+  async function ensureStarted() {
+    if (started) return;
+    const start = await startAuditRun({ workspaceDir, auditHome, skillRoots });
+    runId = start.runId;
+    logFile = start.logFile;
+    started = true;
+  }
+
   return {
     config: async (config) => {
       config.skills = config.skills || {};
@@ -29,17 +37,13 @@ export const SkillLedgerPlugin = async ({ directory } = {}) => {
     },
 
     "experimental.chat.messages.transform": async (_input, output) => {
+      if (isSkillLedgerDisabled()) return;
       if (!output?.messages?.length) return;
       const firstUser = output.messages.find((message) => message.info?.role === "user");
       if (!firstUser?.parts?.length) return;
       if (firstUser.parts.some((part) => part.type === "text" && part.text?.includes("EXTREMELY_IMPORTANT"))) return;
 
-      if (!started) {
-        const start = await startAuditRun({ workspaceDir, auditHome, skillRoots });
-        runId = start.runId;
-        logFile = start.logFile;
-        started = true;
-      }
+      await ensureStarted();
 
       const startupSkillText = await getStartupSkillText();
 
@@ -48,6 +52,21 @@ export const SkillLedgerPlugin = async ({ directory } = {}) => {
         ...ref,
         type: "text",
         text: buildBootstrapText({ runId, pluginRoot, logFile, harness: "opencode", skillText: startupSkillText }),
+      });
+    },
+
+    "tool.execute.after": async (input, output) => {
+      if (isSkillLedgerDisabled()) return;
+      const skillName = observedSkillName(input, output);
+      if (!skillName) return;
+
+      await ensureStarted();
+      await appendEvent(logFile, {
+        event: "skill_called",
+        runId,
+        skill: skillName,
+        evidence: "native_observed",
+        reason: "OpenCode 原生 skill 工具调用事件",
       });
     },
   };
@@ -84,6 +103,60 @@ function normalizeSkillPath(value, workspaceDir) {
 function createRunId() {
   const stamp = new Date().toISOString().replace(/[-:]/g, "").replace(/\..+/, "Z");
   return `${stamp}-${randomUUID().slice(0, 8)}`;
+}
+
+function isSkillLedgerDisabled() {
+  return ["0", "false", "no", "off"].includes(String(process.env.SKILL_LEDGER || "").trim().toLowerCase());
+}
+
+function observedSkillName(input, output) {
+  if (toolName(input, output) !== "skill") return "";
+
+  for (const value of possibleSkillNameValues(input, output)) {
+    const name = normalizeSkillName(value);
+    if (name) return name;
+  }
+  return "";
+}
+
+function toolName(input, output) {
+  const value = input?.tool || input?.toolName || input?.name || output?.tool || output?.toolName || output?.name;
+  if (typeof value === "string") return value.trim().toLowerCase();
+  if (value?.name) return String(value.name).trim().toLowerCase();
+  return "";
+}
+
+function possibleSkillNameValues(input, output) {
+  const payloads = [
+    output?.args,
+    output?.arguments,
+    output?.input,
+    input?.args,
+    input?.arguments,
+    input?.input,
+  ];
+  return payloads.flatMap((payload) => {
+    const parsed = parsePayload(payload);
+    if (!parsed) return [];
+    if (typeof parsed === "string") return [parsed];
+    return [parsed.skill, parsed.name, parsed.skillName, parsed.id];
+  });
+}
+
+function parsePayload(payload) {
+  if (!payload || typeof payload !== "string") return payload;
+  try {
+    return JSON.parse(payload);
+  } catch {
+    return payload;
+  }
+}
+
+function normalizeSkillName(value) {
+  if (!value) return "";
+  if (typeof value === "object" && value.name) return normalizeSkillName(value.name);
+  if (typeof value !== "string") return "";
+  return value.trim();
 }
 
 async function getStartupSkillText() {

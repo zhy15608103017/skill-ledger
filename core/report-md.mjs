@@ -1,7 +1,7 @@
 const EVIDENCE_LABELS = {
-  native_observed: "原生事件观测",
-  self_reported: "模型自报告",
-  log_inferred: "日志推断",
+  native_observed: "原生事件观测（高置信度）",
+  self_reported: "模型自报告（中等置信度，未由宿主事件确认）",
+  log_inferred: "日志推断（低到中等置信度）",
 };
 
 export function renderChineseMarkdownReport(summary) {
@@ -29,9 +29,9 @@ export function renderChineseMarkdownReport(summary) {
     "",
     "## 证据等级说明",
     "",
-    "- 原生事件观测：宿主插件或生命周期事件直接记录到调用。",
-    "- 模型自报告：模型按照审计指令主动记录调用。",
-    "- 日志推断：从对话、日志或 transcript 中推断调用。",
+    "- 原生事件观测：宿主插件或生命周期事件直接记录到调用，置信度最高。",
+    "- 模型自报告：模型按照审计指令主动记录调用，可信但没有宿主事件佐证。",
+    "- 日志推断：从对话、日志或 transcript 中推断调用，适合补充线索而非单独定论。",
   ];
 
   if (summary.possiblyMissedSkills?.length) {
