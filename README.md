@@ -42,8 +42,7 @@ Host-owned install routes:
 
 ```bash
 # Claude Code
-/plugin marketplace add <owner>/skill-ledger-marketplace
-/plugin install skill-ledger@skill-ledger-marketplace
+powershell -ExecutionPolicy Bypass -File scripts/install-claude.ps1
 
 # Cursor
 /add-plugin skill-ledger
@@ -110,6 +109,7 @@ Non-interactive shortcuts are also available:
 
 ```powershell
 npx skill-ledger install-codex
+npx skill-ledger install-claude
 npx skill-ledger install-opencode
 ```
 

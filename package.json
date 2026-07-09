@@ -1,6 +1,6 @@
 {
   "name": "skill-ledger",
-  "version": "0.1.1",
+  "version": "0.1.2",
   "description": "Cross-harness skill usage auditing with Chinese Markdown reports",
   "type": "module",
   "main": ".opencode/plugins/skill-ledger.js",

@@ -93,14 +93,27 @@ PowerShell 入口：
 powershell -ExecutionPolicy Bypass -File scripts/install-claude.ps1
 ```
 
-通过 marketplace 安装：
+发布到 npm 后，可以直接运行：
 
-```text
-/plugin marketplace add <owner>/skill-ledger-marketplace
-/plugin install skill-ledger@skill-ledger-marketplace
+```powershell
+npx skill-ledger install-claude
 ```
 
-本地开发时，将 Claude Code 指向当前仓库作为 plugin directory，确保它能读取 `.claude-plugin/plugin.json`、`hooks/hooks.json` 和 `skills/`。
+脚本会把本仓库的 `.claude-plugin/marketplace.json` 加入 Claude Code marketplace；如果已经安装过同名插件，会先卸载旧缓存并保留数据，再重新安装：
+
+```text
+claude plugin marketplace add "<repo>\.claude-plugin\marketplace.json"
+claude plugin uninstall skill-ledger@skill-ledger-dev --scope user --keep-data --yes
+claude plugin install skill-ledger@skill-ledger-dev --scope user
+```
+
+如果只想打印命令，不自动安装：
+
+```powershell
+powershell -ExecutionPolicy Bypass -File scripts/install-claude.ps1 -PrintOnly
+```
+
+安装后重启 Claude Code 或新开会话，让它重新加载 `.claude-plugin/plugin.json` 和 `skills/`。
 
 ### Cursor
 
@@ -226,7 +239,7 @@ droid plugin install skill-ledger@skill-ledger
 npx skill-ledger
 ```
 
-目前菜单中 Codex 和 OpenCode 会执行自动安装；其它平台会打印对应宿主的安装命令，避免修改用户自己的全局配置文件。
+目前菜单中 Codex、Claude Code 和 OpenCode 会执行自动安装；其它平台会打印对应宿主的安装命令，避免修改用户自己的全局配置文件。
 
 ## 发布到 npm
 

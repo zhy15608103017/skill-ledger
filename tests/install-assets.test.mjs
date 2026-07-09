@@ -36,8 +36,8 @@ test("install guide documents all supported host install commands", async () => 
   const docs = await readFile("docs/INSTALL.md", "utf8");
 
   for (const pattern of [
-    /\/plugin marketplace add <owner>\/skill-ledger-marketplace/,
-    /\/plugin install skill-ledger@skill-ledger-marketplace/,
+    /claude plugin marketplace add "<repo>\\\.claude-plugin\\marketplace\.json"/,
+    /claude plugin install skill-ledger@skill-ledger-dev --scope user/,
     /\/add-plugin skill-ledger/,
     /copilot plugin marketplace add <owner>\/skill-ledger-marketplace/,
     /copilot plugin install skill-ledger@skill-ledger-marketplace/,
@@ -57,7 +57,7 @@ test("each supported host has a PowerShell install command entry point", async (
   const scripts = [
     ["codex", /codex plugin add skill-ledger@/],
     ["opencode", /opencode\.json/],
-    ["claude", /\/plugin install skill-ledger@skill-ledger-marketplace/],
+    ["claude", /claude plugin uninstall \$PluginSpec --scope \$Scope --keep-data --yes[\s\S]*claude plugin install \$PluginSpec --scope \$Scope/],
     ["cursor", /\/add-plugin skill-ledger/],
     ["copilot", /copilot plugin install skill-ledger@skill-ledger-marketplace/],
     ["kimi", /\/plugins install https:\/\/github\.com\/<owner>\/skill-ledger/],

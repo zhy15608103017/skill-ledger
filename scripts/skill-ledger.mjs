@@ -29,6 +29,7 @@ try {
   else if (command === "report") await writeReport(args);
   else if (command === "install-opencode") await installOpenCode(args);
   else if (command === "install-codex") installCodex(args);
+  else if (command === "install-claude") installClaude(args);
   else usage(1);
 } catch (error) {
   console.error(error.stack || error.message);
@@ -64,11 +65,7 @@ async function showQuickInstallMenu() {
       return;
     }
     if (["3", "claude", "claude code"].includes(answer)) {
-      printInstallGuidance("Claude Code", [
-        "/plugin marketplace add <owner>/skill-ledger-marketplace",
-        "/plugin install skill-ledger@skill-ledger-marketplace",
-        "For local development, point Claude Code at this repository as a plugin directory.",
-      ]);
+      installClaude({});
       return;
     }
     if (answer === "4" || answer === "cursor") {
@@ -270,6 +267,20 @@ function installCodex(options) {
   runCommand("powershell", args);
 }
 
+function installClaude(options) {
+  if (process.platform !== "win32") {
+    throw new Error("install-claude currently uses the bundled PowerShell installer and is supported on Windows.");
+  }
+
+  const script = path.join(pluginRoot, "scripts", "install-claude.ps1");
+  const args = ["-ExecutionPolicy", "Bypass", "-File", script];
+  if (options.marketplace) args.push("-MarketplacePath", path.resolve(options.marketplace));
+  if (options["plugin-spec"]) args.push("-PluginSpec", options["plugin-spec"]);
+  if (options.scope) args.push("-Scope", options.scope);
+  if (options["print-only"] === "true") args.push("-PrintOnly");
+  runCommand("powershell", args);
+}
+
 function logPath(runId, cwd) {
   return path.join(auditHome(cwd), "runs", `${runId}.jsonl`);
 }
@@ -332,6 +343,7 @@ function usage(exitCode) {
   node scripts/skill-ledger.mjs finish --run-id <id> [--no-report] [--output <report.md>]
   node scripts/skill-ledger.mjs report --run-id <id> [--output <report.md>]
   node scripts/skill-ledger.mjs install-opencode [--config <opencode.json>] [--plugin <plugin-spec>]
-  node scripts/skill-ledger.mjs install-codex [--marketplace <marketplace.json>] [--skip-codex-add]`);
+  node scripts/skill-ledger.mjs install-codex [--marketplace <marketplace.json>] [--skip-codex-add]
+  node scripts/skill-ledger.mjs install-claude [--marketplace <marketplace.json>] [--plugin-spec <plugin@marketplace>] [--scope user|project|local] [--print-only]`);
   process.exit(exitCode);
 }

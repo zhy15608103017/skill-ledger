@@ -14,6 +14,5 @@
     "reports",
     "developer-tools"
   ],
-  "skills": "./skills/",
-  "hooks": "./hooks/hooks.json"
+  "skills": "./skills/"
 }

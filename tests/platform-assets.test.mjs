@@ -31,7 +31,7 @@ test("platform manifests expose Skill Ledger skills and startup bootstrap", asyn
   const pkg = JSON.parse(await readFile("package.json", "utf8"));
 
   assert.equal(claude.skills, "./skills/");
-  assert.equal(claude.hooks, "./hooks/hooks.json");
+  assert.equal(claude.hooks, undefined);
   assert.match(await readFile("hooks/hooks.json", "utf8"), /observe-skill-call/);
   assert.equal(cursor.skills, "./skills/");
   assert.equal(cursor.hooks, "./hooks/hooks-cursor.json");
