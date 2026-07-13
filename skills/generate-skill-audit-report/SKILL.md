@@ -19,13 +19,15 @@ description: Use when 需要根据 Skill Ledger 的运行结果生成中文 Mark
 node "<plugin-root>/scripts/skill-ledger.mjs" finish --run-id "<runId>"
 ```
 
-默认报告会写入 `<workspace>/.skill-ledger/reports/<runId>.md`。
+默认报告会写入 `<workspace>/.skill-ledger/reports/<runId>.md`，并省略冗长的完整未调用清单。
 
 如果要重新生成报告，或指定输出路径：
 
 ```bash
 node "<plugin-root>/scripts/skill-ledger.mjs" report --run-id "<runId>" --output "<workspace>/.skill-ledger/reports/<name>.md"
 ```
+
+只有在需要逐项盘点所有未调用 Skills 时才加 `--full`。
 
 ## 报告规则
 

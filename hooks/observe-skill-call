@@ -8,19 +8,30 @@ import { appendEvent } from "../core/audit-log.mjs";
 import { scanSkillRoots } from "../core/skill-scanner.mjs";
 import { collectSkillRoots } from "../core/skill-roots.mjs";
 import { isSkillTool, normalizeSkillName, normalizeToolName } from "../core/skill-name.mjs";
+import { observedPayloadMetadata, observedPayloadText, sanitizeTaskContext } from "../core/privacy.mjs";
 
 const hookDir = dirname(fileURLToPath(import.meta.url));
 const pluginRoot = resolve(hookDir, "..");
 
 try {
+  if (isSkillLedgerDisabled()) process.exit(0);
   const payload = parseJson(await readStdin()) || {};
   const harness = process.env.SKILL_LEDGER_HARNESS || detectHarness();
   const cwd = process.env.SKILL_LEDGER_CWD || stringValue(payload.cwd) || process.cwd();
   const auditHome = process.env.SKILL_LEDGER_HOME || process.env.SKILL_AUDIT_HOME || resolve(cwd, ".skill-ledger");
-  const activeRun = await readActiveRun({ auditHome, harness });
+  const sessionId = observedSessionId(payload);
+  const activeRun = await readActiveRun({ auditHome, harness, sessionId, cwd });
 
   if (!activeRun?.runId || !activeRun?.logFile) process.exit(0);
   if (activeRun.cwd && !samePath(activeRun.cwd, cwd)) process.exit(0);
+
+  if (isUserPromptEvent(payload)) {
+    const text = sanitizeTaskContext(observedTaskContext(payload), { mode: activeRun.privacyMode });
+    if (text) {
+      await appendEvent(activeRun.logFile, { event: "task_context", runId: activeRun.runId, text, source: "host_prompt_event" });
+    }
+    process.exit(0);
+  }
 
   const tool = observedToolName(payload);
   const skillName = observedSkillName(payload);
@@ -50,15 +61,17 @@ try {
   if (contextSkills.length) process.exit(0);
 
   if (tool) {
-    // 探针事件：记录工具名与关键输入文本，供漏用推断使用。
-    const toolInputText = collectText(payload).slice(0, 2000);
+    const metadata = observedPayloadMetadata(payload);
+    const toolInputText = observedPayloadText(payload, { mode: activeRun.privacyMode });
     await appendEvent(activeRun.logFile, {
       event: "tool_observed",
       runId: activeRun.runId,
       harness,
       tool,
       toolName: normalizeToolName(tool),
-      toolInputText,
+      toolInputKeys: metadata.inputKeys,
+      payloadHash: metadata.payloadHash,
+      ...(toolInputText ? { toolInputText } : {}),
       hookEvent: stringValue(payload.hook_event_name || payload.hookEventName || payload.event),
       observation: "probe",
     });
@@ -66,6 +79,27 @@ try {
 } catch (error) {
   process.stderr.write(`${error.stack || error.message}\n`);
   process.exit(1);
+}
+
+function isSkillLedgerDisabled() {
+  return ["0", "false", "no", "off"].includes(String(process.env.SKILL_LEDGER || "").trim().toLowerCase());
+}
+
+function observedSessionId(payload) {
+  return stringValue(
+    process.env.SKILL_LEDGER_SESSION_ID ||
+    payload.session_id || payload.sessionId || payload.conversation_id || payload.conversationId ||
+    payload.thread_id || payload.threadId || payload.transcript_path || payload.transcriptPath,
+  ).trim();
+}
+
+function isUserPromptEvent(payload) {
+  const name = stringValue(payload.hook_event_name || payload.hookEventName || payload.event).toLowerCase();
+  return name === "userpromptsubmit" || name === "user_prompt_submit" || name === "user.prompt.submit";
+}
+
+function observedTaskContext(payload) {
+  return stringValue(payload.prompt || payload.user_prompt || payload.userPrompt || payload.message || payload.input?.prompt);
 }
 
 function readStdin() {

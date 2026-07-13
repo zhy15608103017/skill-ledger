@@ -1,14 +1,18 @@
 #!/usr/bin/env node
 import { spawnSync } from "node:child_process";
+import { stdin } from "node:process";
 import { dirname, resolve } from "node:path";
 import { fileURLToPath } from "node:url";
 
 import { buildBootstrapText, readStartupSkillText } from "../core/bootstrap.mjs";
+import { appendEvent } from "../core/audit-log.mjs";
 
 const hookDir = dirname(fileURLToPath(import.meta.url));
 const pluginRoot = resolve(hookDir, "..");
+const payload = parseJson(await readStdin());
 const harness = process.env.SKILL_LEDGER_HARNESS || detectHarness();
-const cwd = process.env.SKILL_LEDGER_CWD || process.cwd();
+const cwd = process.env.SKILL_LEDGER_CWD || stringValue(payload.cwd) || process.cwd();
+const sessionId = observedSessionId(payload);
 
 try {
   const start = startAuditRun();
@@ -18,7 +22,15 @@ try {
     pluginRoot,
     logFile: start.logFile,
     harness,
+    sessionId,
     skillText,
+  });
+  await appendEvent(start.logFile, {
+    event: "skill_called",
+    runId: start.runId,
+    skill: "using-skill-audit",
+    evidence: "context_observed",
+    reason: `${displayHarnessName(harness)} session hook injected using-skill-audit Skill content`,
   });
 
   process.stdout.write(`${JSON.stringify(payloadForHarness(bootstrap), null, 2)}\n`);
@@ -28,12 +40,17 @@ try {
 }
 
 function startAuditRun() {
+  const args = [resolve(pluginRoot, "scripts", "skill-ledger.mjs"), "start", "--harness", harness, "--cwd", cwd];
+  if (sessionId) args.push("--session-id", sessionId);
+  const taskContext = observedTaskContext(payload);
+  if (taskContext) args.push("--task-context-stdin");
   const result = spawnSync(
     process.execPath,
-    [resolve(pluginRoot, "scripts", "skill-ledger.mjs"), "start", "--harness", harness, "--cwd", cwd],
+    args,
     {
       cwd,
       encoding: "utf8",
+      input: taskContext || undefined,
       env: process.env,
     },
   );
@@ -43,6 +60,39 @@ function startAuditRun() {
   }
 
   return JSON.parse(result.stdout);
+}
+
+function readStdin() {
+  return new Promise((resolvePromise, reject) => {
+    let content = "";
+    stdin.setEncoding("utf8");
+    stdin.on("data", (chunk) => { content += chunk; });
+    stdin.on("end", () => resolvePromise(content));
+    stdin.on("error", reject);
+  });
+}
+
+function parseJson(content) {
+  const text = String(content || "").trim();
+  if (!text) return {};
+  try { return JSON.parse(text); } catch { return {}; }
+}
+
+function observedSessionId(value) {
+  return stringValue(
+    process.env.SKILL_LEDGER_SESSION_ID ||
+    value.session_id || value.sessionId || value.conversation_id || value.conversationId ||
+    value.thread_id || value.threadId || value.transcript_path || value.transcriptPath,
+  );
+}
+
+function observedTaskContext(value) {
+  return stringValue(value.prompt || value.user_prompt || value.userPrompt || value.message || value.input?.prompt).slice(0, 4000);
+}
+
+function stringValue(value) {
+  if (value === undefined || value === null || typeof value === "object") return "";
+  return String(value).trim();
 }
 
 function payloadForHarness(bootstrap) {
@@ -67,4 +117,9 @@ function detectHarness() {
   if (process.env.COPILOT_CLI) return "copilot-cli";
   if (process.env.CLAUDE_PLUGIN_ROOT) return "claude-code";
   return "shell-hook";
+}
+
+function displayHarnessName(value) {
+  const names = { "claude-code": "Claude Code", cursor: "Cursor", "copilot-cli": "GitHub Copilot CLI" };
+  return names[value] || value || "unknown";
 }

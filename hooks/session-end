@@ -1,0 +1,69 @@
+#!/usr/bin/env node
+import { spawnSync } from "node:child_process";
+import { stdin } from "node:process";
+import { dirname, resolve } from "node:path";
+import { fileURLToPath } from "node:url";
+
+import { readActiveRun } from "../core/active-run.mjs";
+
+const hookDir = dirname(fileURLToPath(import.meta.url));
+const pluginRoot = resolve(hookDir, "..");
+
+try {
+  if (isDisabled()) process.exit(0);
+  const payload = parseJson(await readStdin());
+  const harness = process.env.SKILL_LEDGER_HARNESS || detectHarness();
+  const cwd = process.env.SKILL_LEDGER_CWD || stringValue(payload.cwd) || process.cwd();
+  const sessionId = observedSessionId(payload);
+  const auditHome = process.env.SKILL_LEDGER_HOME || process.env.SKILL_AUDIT_HOME || resolve(cwd, ".skill-ledger");
+  const activeRun = await readActiveRun({ auditHome, harness, sessionId, cwd });
+  if (!activeRun?.runId) process.exit(0);
+
+  const result = spawnSync(
+    process.execPath,
+    [resolve(pluginRoot, "scripts", "skill-ledger.mjs"), "finish", "--run-id", activeRun.runId, "--cwd", cwd],
+    { cwd, encoding: "utf8", env: process.env },
+  );
+  if (result.status !== 0) throw new Error(result.stderr || result.stdout || "Failed to finish Skill Ledger run.");
+} catch (error) {
+  process.stderr.write(`${error.stack || error.message}\n`);
+  process.exit(1);
+}
+
+function readStdin() {
+  return new Promise((resolvePromise, reject) => {
+    let content = "";
+    stdin.setEncoding("utf8");
+    stdin.on("data", (chunk) => { content += chunk; });
+    stdin.on("end", () => resolvePromise(content));
+    stdin.on("error", reject);
+  });
+}
+
+function parseJson(content) {
+  const text = String(content || "").trim();
+  if (!text) return {};
+  try { return JSON.parse(text); } catch { return {}; }
+}
+
+function observedSessionId(payload) {
+  return stringValue(
+    process.env.SKILL_LEDGER_SESSION_ID ||
+    payload.session_id || payload.sessionId || payload.conversation_id || payload.conversationId ||
+    payload.thread_id || payload.threadId || payload.transcript_path || payload.transcriptPath,
+  );
+}
+
+function stringValue(value) {
+  if (value === undefined || value === null || typeof value === "object") return "";
+  return String(value).trim();
+}
+
+function detectHarness() {
+  if (process.env.CLAUDE_PLUGIN_ROOT) return "claude-code";
+  return "unknown";
+}
+
+function isDisabled() {
+  return ["0", "false", "no", "off"].includes(String(process.env.SKILL_LEDGER || "").trim().toLowerCase());
+}

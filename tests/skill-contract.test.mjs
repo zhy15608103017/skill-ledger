@@ -16,6 +16,6 @@ test("Codex manifest exposes the strengthened startup skill package", async () =
   const manifest = JSON.parse(await readFile(".codex-plugin/plugin.json", "utf8"));
 
   assert.equal(manifest.skills, "./skills/");
-  assert.deepEqual(manifest.hooks, {});
+  assert.equal(manifest.hooks, undefined);
   assert.ok(manifest.interface.defaultPrompt.some((prompt) => /skill audit/i.test(prompt)));
 });

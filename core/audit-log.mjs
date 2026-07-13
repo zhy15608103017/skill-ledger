@@ -38,6 +38,9 @@ export function summarizeRun(events) {
   let runId = "";
   let harness = "";
   let cwd = "";
+  let sessionId = "";
+  let privacyMode = "";
+  let retentionDays = 0;
   let startedAt = "";
   let finishedAt = "";
 
@@ -46,6 +49,9 @@ export function summarizeRun(events) {
     if (event.event === "task_start") {
       harness = event.harness || harness;
       cwd = event.cwd || cwd;
+      sessionId = event.sessionId || sessionId;
+      privacyMode = event.privacyMode || privacyMode;
+      retentionDays = Number.isFinite(event.retentionDays) ? event.retentionDays : retentionDays;
       startedAt = event.time || startedAt;
       if (event.taskContext) taskContextParts.push(String(event.taskContext));
     }
@@ -125,6 +131,9 @@ export function summarizeRun(events) {
     runId,
     harness,
     cwd,
+    sessionId,
+    privacyMode,
+    retentionDays,
     startedAt,
     finishedAt,
     discoveredSkills,

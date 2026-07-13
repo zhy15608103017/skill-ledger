@@ -1,12 +1,12 @@
 param(
-  [string]$Marketplace = "<owner>/skill-ledger-marketplace",
-  [string]$PluginSpec = "skill-ledger@skill-ledger-marketplace",
+  [string]$Marketplace = "zhy15608103017/skill-ledger",
+  [string]$PluginSpec = "skill-ledger@skill-ledger",
   [switch]$PrintOnly
 )
 
 $ErrorActionPreference = "Stop"
 
-# Example: copilot plugin install skill-ledger@skill-ledger-marketplace
+# Example: copilot plugin install skill-ledger@skill-ledger
 $commands = @(
   "copilot plugin marketplace add $Marketplace",
   "copilot plugin install $PluginSpec"
@@ -16,9 +16,9 @@ Write-Host "Skill Ledger GitHub Copilot CLI install commands:"
 $commands | ForEach-Object { Write-Host $_ }
 
 $copilot = Get-Command copilot -ErrorAction SilentlyContinue
-if ($PrintOnly -or -not $copilot -or $Marketplace.Contains("<owner>")) {
+if ($PrintOnly -or -not $copilot) {
   Write-Host ""
-  Write-Host "Run these commands after replacing <owner> and confirming Copilot CLI is available."
+  Write-Host "Run these commands after confirming Copilot CLI is available."
   exit 0
 }
 

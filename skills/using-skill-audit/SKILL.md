@@ -25,10 +25,10 @@ Start and maintain a local audit of which skills were discovered and which skill
 
 1. Find the plugin root: the directory that contains `scripts/skill-ledger.mjs`.
 2. If the prompt already contains an `Active Skill Ledger Audit` section with `runId`, `logFile`, and command examples, reuse that run.
-3. If no active run exists, start one before doing task work:
+3. If no active run exists, create a short redacted summary of the user's task and start one before doing task work. Do not paste secrets, tokens, or full confidential prompts into the shell command:
 
 ```bash
-node "<plugin-root>/scripts/skill-ledger.mjs" start --harness "<tool-name>" --cwd "<workspace>"
+node "<plugin-root>/scripts/skill-ledger.mjs" start --harness "<tool-name>" --cwd "<workspace>" --task-context "<short redacted task summary>" --startup-skill using-skill-audit --startup-evidence self_reported
 ```
 
 Keep the returned `runId` for the rest of the task.
@@ -43,6 +43,8 @@ node "<plugin-root>/scripts/skill-ledger.mjs" call --run-id "<runId>" --skill "<
 
 Use `native_observed` only when the host adapter directly observed the skill call. Use `context_observed` when a host hook confirms the Skill content was loaded into model context but did not expose a native Skill tool call. Use `self_reported` when the model records the call because this skill required it. Use `log_inferred` only when reconstructing an audit from logs or a transcript.
 
+Codex currently uses the guided `self_reported` workflow for skill calls. Do not relabel a Codex model-recorded call as `native_observed`. Claude Code and OpenCode adapters may emit `native_observed` only from their host tool lifecycle events.
+
 ## Finish
 
 At the end of the task, finish the run. This automatically writes a Chinese Markdown report under `.skill-ledger/reports/`:
@@ -52,6 +54,15 @@ node "<plugin-root>/scripts/skill-ledger.mjs" finish --run-id "<runId>"
 ```
 
 Use `--no-report` only when the caller explicitly wants to close the run without writing a report. Use the separate `report` command when regenerating a report or writing it to a custom output path.
+
+The default report is concise. Use `finish --full` or `report --full` only when a complete list of every uncalled Skill is required.
+
+## Privacy and Retention
+
+- `SKILL_LEDGER_PRIVACY=balanced` is the default: redacted task context is retained, while arbitrary tool input text is not persisted.
+- `strict` stores no task or tool input text.
+- `diagnostic` stores redacted, truncated tool input text for adapter debugging.
+- Set `SKILL_LEDGER_RETENTION_DAYS=<n>` to remove expired run logs and reports automatically when a new run starts. A value of `0` disables automatic deletion.
 
 ## Skill Roots
 

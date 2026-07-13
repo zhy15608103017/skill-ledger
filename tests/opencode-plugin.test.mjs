@@ -1,5 +1,5 @@
 import assert from "node:assert/strict";
-import { mkdir, mkdtemp, readdir, writeFile } from "node:fs/promises";
+import { mkdir, mkdtemp, readFile, readdir, writeFile } from "node:fs/promises";
 import { tmpdir } from "node:os";
 import path from "node:path";
 import test from "node:test";
@@ -30,7 +30,7 @@ test("OpenCode adapter registers skills, injects bootstrap, and starts a run", a
       ],
     };
 
-    await plugin["experimental.chat.messages.transform"]({}, output);
+    await plugin["experimental.chat.messages.transform"]({ sessionID: "open-session" }, output);
 
     assert.match(output.messages[0].parts[0].text, new RegExp(AUDIT_BOOTSTRAP_MARKER));
     assert.match(output.messages[0].parts[0].text, /^<EXTREMELY_IMPORTANT>\nYou have Skill Ledger\./);
@@ -45,7 +45,10 @@ test("OpenCode adapter registers skills, injects bootstrap, and starts a run", a
     assert.equal(runFiles.length, 1);
     const events = await readEvents(path.join(auditHome, "runs", runFiles[0]));
     assert.equal(events[0].event, "task_start");
+    assert.equal(events[0].sessionId, "open-session");
+    assert.equal(events[0].taskContext, "hello");
     assert.ok(events.some((event) => event.event === "skill_discovered" && event.skill.name === "using-skill-audit"));
+    assert.ok(events.some((event) => event.event === "skill_called" && event.skill === "using-skill-audit" && event.evidence === "context_observed"));
   } finally {
     if (previousHome === undefined) delete process.env.SKILL_LEDGER_HOME;
     else process.env.SKILL_LEDGER_HOME = previousHome;
@@ -62,7 +65,7 @@ test("OpenCode adapter records native skill tool calls", async () => {
     const plugin = await SkillLedgerPlugin({ directory: cwd });
     await plugin.config({ skills: { paths: [] } });
 
-    await plugin["tool.execute.after"]({ tool: "skill" }, { args: { name: "brainstorming" } });
+    await plugin["tool.execute.after"]({ tool: "skill", sessionID: "native-session" }, { args: { name: "brainstorming" } });
 
     const runFiles = await readdir(path.join(auditHome, "runs"));
     assert.equal(runFiles.length, 1);
@@ -76,6 +79,51 @@ test("OpenCode adapter records native skill tool calls", async () => {
           /OpenCode/.test(event.reason),
       ),
     );
+  } finally {
+    if (previousHome === undefined) delete process.env.SKILL_LEDGER_HOME;
+    else process.env.SKILL_LEDGER_HOME = previousHome;
+  }
+});
+
+test("OpenCode adapter isolates sessions and writes a report on session deletion", async () => {
+  const cwd = await mkdtemp(path.join(tmpdir(), "skill-ledger-opencode-sessions-"));
+  const auditHome = path.join(cwd, ".skill-ledger");
+  const previousHome = process.env.SKILL_LEDGER_HOME;
+  process.env.SKILL_LEDGER_HOME = auditHome;
+
+  try {
+    const plugin = await SkillLedgerPlugin({ directory: cwd });
+    await plugin.config({ skills: { paths: [] } });
+    const first = { messages: [{ info: { role: "user" }, parts: [{ type: "text", text: "first task" }] }] };
+    const second = { messages: [{ info: { role: "user" }, parts: [{ type: "text", text: "second task" }] }] };
+    await plugin["experimental.chat.messages.transform"]({ sessionID: "session-one" }, first);
+    await plugin["experimental.chat.messages.transform"]({ sessionID: "session-two" }, second);
+    await plugin["tool.execute.after"]({ tool: "skill", sessionID: "session-two" }, { args: { name: "brainstorming" } });
+
+    const runFiles = (await readdir(path.join(auditHome, "runs"))).sort();
+    assert.equal(runFiles.length, 2);
+    const runEvents = await Promise.all(runFiles.map((file) => readEvents(path.join(auditHome, "runs", file))));
+    const firstEvents = runEvents.find((events) => events[0].sessionId === "session-one");
+    const secondEvents = runEvents.find((events) => events[0].sessionId === "session-two");
+    assert.equal(firstEvents.some((event) => event.skill === "brainstorming"), false);
+    assert.equal(secondEvents.some((event) => event.skill === "brainstorming" && event.evidence === "native_observed"), true);
+
+    await plugin["tool.execute.after"]({ tool: "skill" }, { args: { name: "unattributed-skill" } });
+    const afterUnattributed = await Promise.all(runFiles.map((file) => readEvents(path.join(auditHome, "runs", file))));
+    assert.equal(afterUnattributed.some((events) => events.some((event) => event.skill === "unattributed-skill")), false);
+
+    await plugin.event({ event: { type: "session.deleted", properties: { info: { id: "session-two" } } } });
+    const secondRunId = secondEvents[0].runId;
+    assert.match(await readFile(path.join(auditHome, "reports", `${secondRunId}.md`), "utf8"), /任务上下文：已记录/);
+    const activeFiles = await readdir(path.join(auditHome, "active"));
+    assert.equal(activeFiles.length, 1);
+
+    await plugin["tool.execute.after"]({ tool: "skill", sessionID: "session-two" }, { args: { name: "late-skill" } });
+    await plugin.event({ event: { type: "session.deleted", properties: { info: { id: "session-two" } } } });
+    assert.equal((await readdir(path.join(auditHome, "runs"))).length, 2);
+    const endedEvents = await readEvents(path.join(auditHome, "runs", `${secondRunId}.jsonl`));
+    assert.equal(endedEvents.some((event) => event.skill === "late-skill"), false);
+    assert.equal(endedEvents.filter((event) => event.event === "task_end").length, 1);
   } finally {
     if (previousHome === undefined) delete process.env.SKILL_LEDGER_HOME;
     else process.env.SKILL_LEDGER_HOME = previousHome;

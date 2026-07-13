@@ -1,9 +1,14 @@
 import { randomUUID } from "node:crypto";
+import { mkdir, writeFile } from "node:fs/promises";
 import path from "node:path";
 import { fileURLToPath } from "node:url";
 
-import { appendEvent } from "../../core/audit-log.mjs";
+import { clearActiveRun, writeActiveRun } from "../../core/active-run.mjs";
+import { appendEvent, readEvents, summarizeRun } from "../../core/audit-log.mjs";
 import { buildBootstrapText, readStartupSkillText } from "../../core/bootstrap.mjs";
+import { privacySettings, sanitizeTaskContext } from "../../core/privacy.mjs";
+import { renderChineseMarkdownReport } from "../../core/report-md.mjs";
+import { pruneAuditData } from "../../core/retention.mjs";
 import { scanSkillRoots } from "../../core/skill-scanner.mjs";
 import { collectSkillRoots } from "../../core/skill-roots.mjs";
 
@@ -16,16 +21,34 @@ export const SkillLedgerPlugin = async ({ directory } = {}) => {
   const workspaceDir = path.resolve(directory || process.cwd());
   const auditHome = process.env.SKILL_LEDGER_HOME || process.env.SKILL_AUDIT_HOME || path.join(workspaceDir, ".skill-ledger");
   let skillRoots = collectSkillRoots({ cwd: workspaceDir, pluginRoot });
-  let started = false;
-  let runId = "";
-  let logFile = "";
+  const runs = new Map();
+  const endedSessionIds = new Set();
+  const settings = privacySettings();
 
-  async function ensureStarted() {
-    if (started) return;
-    const start = await startAuditRun({ workspaceDir, auditHome, skillRoots });
-    runId = start.runId;
-    logFile = start.logFile;
-    started = true;
+  async function ensureStarted({ sessionId = "", taskContext = "", allowCreate = false } = {}) {
+    if (sessionId && endedSessionIds.has(sessionId)) return null;
+
+    if (sessionId && runs.has(sessionId)) {
+      const run = runs.get(sessionId);
+      await recordLateTaskContext(run, taskContext, settings.mode);
+      return { key: sessionId, run };
+    }
+    if (!sessionId) {
+      const candidates = [...runs.entries()];
+      if (candidates.length === 1) {
+        const [key, run] = candidates[0];
+        await recordLateTaskContext(run, taskContext, settings.mode);
+        return { key, run };
+      }
+      if (candidates.length > 1 || !allowCreate) return null;
+    } else if (!allowCreate) {
+      return null;
+    }
+
+    const key = sessionId || `anonymous-${createRunId()}`;
+    const run = await startAuditRun({ workspaceDir, auditHome, skillRoots, sessionId, taskContext, settings });
+    runs.set(key, run);
+    return { key, run };
   }
 
   return {
@@ -37,14 +60,18 @@ export const SkillLedgerPlugin = async ({ directory } = {}) => {
       if (!existing.some((item) => samePath(item, pluginSkillsDir))) config.skills.paths.push(pluginSkillsDir);
     },
 
-    "experimental.chat.messages.transform": async (_input, output) => {
+    "experimental.chat.messages.transform": async (input, output) => {
       if (isSkillLedgerDisabled()) return;
       if (!output?.messages?.length) return;
       const firstUser = output.messages.find((message) => message.info?.role === "user");
       if (!firstUser?.parts?.length) return;
       if (firstUser.parts.some((part) => part.type === "text" && part.text?.includes("EXTREMELY_IMPORTANT"))) return;
 
-      await ensureStarted();
+      const sessionId = observedSessionId(input, output);
+      const taskContext = firstUserText(firstUser);
+      const resolved = await ensureStarted({ sessionId, taskContext, allowCreate: true });
+      if (!resolved) return;
+      const { run } = resolved;
 
       const startupSkillText = await getStartupSkillText();
 
@@ -52,8 +79,18 @@ export const SkillLedgerPlugin = async ({ directory } = {}) => {
       firstUser.parts.unshift({
         ...ref,
         type: "text",
-        text: buildBootstrapText({ runId, pluginRoot, logFile, harness: "opencode", skillText: startupSkillText }),
+        text: buildBootstrapText({ runId: run.runId, pluginRoot, logFile: run.logFile, harness: "opencode", sessionId, skillText: startupSkillText }),
       });
+      if (!run.startupRecorded) {
+        await appendEvent(run.logFile, {
+          event: "skill_called",
+          runId: run.runId,
+          skill: "using-skill-audit",
+          evidence: "context_observed",
+          reason: "OpenCode message transform injected using-skill-audit Skill content",
+        });
+        run.startupRecorded = true;
+      }
     },
 
     "tool.execute.after": async (input, output) => {
@@ -61,37 +98,87 @@ export const SkillLedgerPlugin = async ({ directory } = {}) => {
       const skillName = observedSkillName(input, output);
       if (!skillName) return;
 
-      await ensureStarted();
-      await appendEvent(logFile, {
+      const sessionId = observedSessionId(input, output);
+      const resolved = await ensureStarted({ sessionId, allowCreate: Boolean(sessionId) });
+      if (!resolved) return;
+      const { run } = resolved;
+      await appendEvent(run.logFile, {
         event: "skill_called",
-        runId,
+        runId: run.runId,
         skill: skillName,
         evidence: "native_observed",
         reason: "OpenCode 原生 skill 工具调用事件",
       });
+    },
+
+    event: async ({ event } = {}) => {
+      if (isSkillLedgerDisabled()) return;
+      if (!isSessionEndEvent(event)) return;
+      const sessionId = observedSessionId(event);
+      if (sessionId && endedSessionIds.has(sessionId)) return;
+      const key = sessionId || ([...runs.keys()].length === 1 ? [...runs.keys()][0] : "");
+      if (!key) return;
+      const run = runs.get(key);
+      if (!run) return;
+      runs.delete(key);
+      if (sessionId) endedSessionIds.add(sessionId);
+      try {
+        await finishAuditRun({ run, auditHome });
+      } catch (error) {
+        runs.set(key, run);
+        if (sessionId) endedSessionIds.delete(sessionId);
+        throw error;
+      }
     },
   };
 };
 
 export default SkillLedgerPlugin;
 
-async function startAuditRun({ workspaceDir, auditHome, skillRoots }) {
+async function startAuditRun({ workspaceDir, auditHome, skillRoots, sessionId = "", taskContext = "", settings }) {
+  await pruneAuditData(auditHome, { retentionDays: settings.retentionDays });
   const runId = createRunId();
   const logFile = path.join(auditHome, "runs", `${runId}.jsonl`);
   const skills = await scanSkillRoots(skillRoots);
+  const sanitizedTaskContext = sanitizeTaskContext(taskContext, { mode: settings.mode });
 
   await appendEvent(logFile, {
     event: "task_start",
     runId,
     harness: "opencode",
     cwd: workspaceDir,
+    sessionId,
+    privacyMode: settings.mode,
+    retentionDays: settings.retentionDays,
+    taskContext: sanitizedTaskContext,
   });
 
   for (const skill of skills) {
     await appendEvent(logFile, { event: "skill_discovered", runId, skill });
   }
 
-  return { runId, logFile };
+  await writeActiveRun({ auditHome, harness: "opencode", runId, logFile, cwd: workspaceDir, sessionId, privacyMode: settings.mode });
+  return { runId, logFile, sessionId, startupRecorded: false, contextRecorded: Boolean(sanitizedTaskContext) };
+}
+
+async function recordLateTaskContext(run, taskContext, privacyMode) {
+  if (!taskContext || run.contextRecorded) return;
+  const text = sanitizeTaskContext(taskContext, { mode: privacyMode });
+  if (!text) return;
+  await appendEvent(run.logFile, { event: "task_context", runId: run.runId, text, source: "opencode_first_user_message" });
+  run.contextRecorded = true;
+}
+
+async function finishAuditRun({ run, auditHome }) {
+  const events = await readEvents(run.logFile);
+  if (!events.some((event) => event.event === "task_end")) {
+    await appendEvent(run.logFile, { event: "task_end", runId: run.runId });
+  }
+  const summary = summarizeRun(await readEvents(run.logFile));
+  const reportPath = path.join(auditHome, "reports", `${run.runId}.md`);
+  await mkdir(path.dirname(reportPath), { recursive: true });
+  await writeFile(reportPath, renderChineseMarkdownReport(summary), "utf8");
+  await clearActiveRun({ auditHome, runId: run.runId });
 }
 
 function normalizeSkillPath(value, workspaceDir) {
@@ -111,6 +198,28 @@ function samePath(left, right) {
 function createRunId() {
   const stamp = new Date().toISOString().replace(/[-:]/g, "").replace(/\..+/, "Z");
   return `${stamp}-${randomUUID().slice(0, 8)}`;
+}
+
+function observedSessionId(...values) {
+  for (const value of values) {
+    const id = value?.sessionID || value?.sessionId || value?.session_id || value?.conversationID || value?.conversationId ||
+      value?.event?.properties?.info?.id || value?.properties?.info?.id || value?.properties?.sessionID;
+    if (id) return String(id);
+  }
+  return "";
+}
+
+function firstUserText(message) {
+  return (message?.parts || [])
+    .filter((part) => part?.type === "text" && typeof part.text === "string")
+    .map((part) => part.text)
+    .join("\n")
+    .slice(0, 4000);
+}
+
+function isSessionEndEvent(event) {
+  const type = String(event?.type || event?.event || "").toLowerCase();
+  return type === "session.deleted" || type === "session.ended";
 }
 
 function isSkillLedgerDisabled() {

@@ -1,119 +1,55 @@
 # Skill Ledger
 
-Skill Ledger records which skills are discovered and called during an agent task, then writes a Chinese Markdown report.
+Skill Ledger records which agent skills were discovered and called during a task, attaches an explicit evidence level to every call, and writes a concise Chinese Markdown report.
 
-## Supported Agents
+## Support Levels
 
-Skill Ledger follows the Superpowers compatibility pattern and ships platform
-artifacts for Claude Code, Antigravity, Codex App, Codex CLI, Cursor, Factory
-Droid, GitHub Copilot CLI, Kimi Code, OpenCode, Pi, and Gemini.
+### Tier 1: verified
 
-Support has two levels:
+- **Codex App / Codex CLI**: the bundled `using-skill-audit` skill starts a run with redacted task context and records calls as `self_reported`. Codex support is intentionally honest: without a native Skill lifecycle event, model-recorded calls are never presented as native observations.
+- **Claude Code**: `SessionStart`, `UserPromptSubmit`, `PostToolUse`, and `SessionEnd` hooks provide session-scoped startup, redacted task context, native Skill-call observation, automatic report generation, and active-run cleanup.
+- **OpenCode**: the plugin injects the resident bootstrap into the first user message, records the original task context, observes native `skill` tool calls, isolates concurrent sessions, and closes a run when the session is deleted or ended.
 
-- Native/runtime wiring in this repository: Codex App, Codex CLI, OpenCode,
-  Claude Code, Cursor, GitHub Copilot CLI, Kimi Code, Gemini, and Pi.
-- Install-route compatibility documented from the Superpowers pattern:
-  Antigravity and Factory Droid. These should be verified in a fresh live host
-  session before treating them as fully validated.
+Tier 1 means that installation assets, session isolation, evidence attribution, privacy defaults, and report generation are covered by automated integration tests in this repository.
 
-## Install From Git
+### Experimental compatibility
 
-OpenCode can load the repository directly:
+Cursor, GitHub Copilot CLI, Kimi Code, Gemini, Pi, Antigravity, and Factory Droid artifacts remain available for compatibility testing. They are not described as Tier 1 until their lifecycle and native evidence paths have been verified in fresh live-host sessions.
 
-```json
-{
-  "plugin": ["skill-ledger@git+https://github.com/<owner>/skill-ledger.git"]
-}
-```
+## Trust Model
 
-Codex local installation after cloning:
+Evidence is never silently upgraded:
 
-Codex quick installer is currently Windows only because it uses the bundled
-PowerShell script. On macOS/Linux, use the host-owned Codex plugin install flow
-or run the audit CLI commands manually until a Node-based installer is added.
+- `native_observed`: a host adapter directly observed a Skill tool call.
+- `context_observed`: a host confirmed that Skill content entered model context.
+- `self_reported`: the model recorded its own usage under the audit workflow.
+- `log_inferred`: a call was reconstructed from logs or a transcript.
+
+Concurrent sessions are keyed by host session ID. If a host provides no session ID and multiple runs are possible, Skill Ledger drops the ambiguous event instead of assigning it to the wrong conversation. Finished runs are removed from the active index and reject later writes.
+
+## Install Tier 1 Hosts
+
+### Codex on Windows
 
 ```powershell
-git clone https://github.com/<owner>/skill-ledger.git "$HOME\plugins\skill-ledger"
+git clone https://github.com/zhy15608103017/skill-ledger.git "$HOME\plugins\skill-ledger"
 cd "$HOME\plugins\skill-ledger"
 powershell -ExecutionPolicy Bypass -File scripts/install-codex.ps1
 ```
 
-Host-owned install routes:
+The bundled Codex quick installer is currently Windows only. On macOS/Linux, install the plugin through the host-owned Codex plugin flow or use the CLI commands directly.
 
-```bash
-# Claude Code
+### Claude Code
+
+```powershell
+git clone https://github.com/zhy15608103017/skill-ledger.git
+cd skill-ledger
 powershell -ExecutionPolicy Bypass -File scripts/install-claude.ps1
-
-# Cursor
-/add-plugin skill-ledger
-
-# GitHub Copilot CLI
-copilot plugin marketplace add <owner>/skill-ledger-marketplace
-copilot plugin install skill-ledger@skill-ledger-marketplace
-
-# Kimi Code
-/plugins install https://github.com/<owner>/skill-ledger
-
-# Gemini
-gemini extensions install https://github.com/<owner>/skill-ledger
-
-# Pi
-pi install git:github.com/<owner>/skill-ledger
-
-# Antigravity
-agy plugin install https://github.com/<owner>/skill-ledger
-
-# Factory Droid
-droid plugin marketplace add https://github.com/<owner>/skill-ledger
-droid plugin install skill-ledger@skill-ledger
 ```
 
-## Install From npm
+### OpenCode
 
-Publish:
-
-```powershell
-npm login --registry=https://registry.npmjs.org/
-npm test
-npm pack --dry-run
-npm publish --access public --registry=https://registry.npmjs.org/
-```
-
-After publishing to npm, install the CLI globally:
-
-```bash
-npm install -g skill-ledger
-skill-ledger start --harness codex --cwd .
-```
-
-Quick install a supported AI coding tool after npm publish:
-
-```powershell
-npx skill-ledger
-```
-
-This opens an interactive installer:
-
-- `1. Codex`
-- `2. OpenCode`
-- `3. Claude Code`
-- `4. Cursor`
-- `5. GitHub Copilot CLI`
-- `6. Kimi Code`
-- `7. Gemini`
-- `8. Pi`
-- `9. Antigravity`
-- `10. Factory Droid`
-
-Non-interactive shortcuts are also available:
-
-```powershell
-npx skill-ledger install-codex
-npx skill-ledger install-claude
-npx skill-ledger install-opencode
-```
-
-For OpenCode, use the npm package name in `opencode.json`:
+From npm:
 
 ```json
 {
@@ -121,56 +57,73 @@ For OpenCode, use the npm package name in `opencode.json`:
 }
 ```
 
-If you publish under a scope, replace `skill-ledger` with `@your-scope/skill-ledger` and run:
+From Git:
 
-```powershell
-npx @your-scope/skill-ledger
+```json
+{
+  "plugin": ["skill-ledger@git+https://github.com/zhy15608103017/skill-ledger.git"]
+}
 ```
 
-The OpenCode shortcut reads the package name from `package.json`, so scoped packages are written correctly.
+Or update the local OpenCode config with:
 
-## Basic Commands
+```powershell
+powershell -ExecutionPolicy Bypass -File scripts/install-opencode.ps1
+```
+
+## CLI
 
 ```bash
-skill-ledger start --harness codex --cwd .
-skill-ledger call --run-id <runId> --skill <skill-name> --evidence self_reported --reason "<Chinese reason>"
+skill-ledger start --harness codex --cwd . \
+  --task-context "short redacted task summary" \
+  --startup-skill using-skill-audit \
+  --startup-evidence self_reported
+
+skill-ledger call --run-id <runId> --skill <skill-name> \
+  --evidence self_reported --reason "<Chinese reason>"
+
 skill-ledger finish --run-id <runId>
 ```
 
-`finish` writes the default Chinese Markdown report to `.skill-ledger/reports/<local timestamp>.md`. Use `skill-ledger report --run-id <runId>` only when regenerating a report or writing it to a custom output path.
+The default report is written to `.skill-ledger/reports/<runId>.md`. It summarizes source coverage and possible misses without dumping every uncalled skill. Add `--full` to `finish` or `report` when a complete inventory is required.
 
-## Skill Discovery Roots
+Other useful commands:
 
-Skill Ledger now uses the same shared skill-root discovery across CLI starts,
-OpenCode runtime injection, Claude/Cursor/Copilot session hooks, Pi context
-injection, and any host that routes through the shared hooks.
+```bash
+skill-ledger status --harness claude-code --session-id <sessionId>
+skill-ledger runs --limit 20
+skill-ledger task-context --run-id <runId> --text "redacted context"
+skill-ledger prune --days 30
+```
 
-Default discovery includes the bundled `skills/`, workspace skill directories,
-user-level skill directories, Codex plugin cache, and common local skill roots
-such as `.cc-switch` and `understand-anything`. Add more roots with repeated
-`--skills` flags or with `SKILL_LEDGER_SKILL_ROOTS` / `SKILL_LEDGER_SKILLS`.
-Explicit roots are appended to the defaults. Use `--only-skills` only when you
-want to restrict discovery to the supplied roots only.
+## Privacy and Retention
 
-## Strong Startup Workflow
+`SKILL_LEDGER_PRIVACY` controls local data capture:
 
-Skill Ledger now follows a Superpowers-style startup pattern:
+- `balanced` (default): stores redacted task context; stores tool names, input keys, and payload hashes, but not arbitrary tool input text.
+- `strict`: stores no task or tool input text.
+- `diagnostic`: stores redacted and truncated tool input text for adapter debugging.
 
-- Codex loads the bundled skills through `.codex-plugin/plugin.json`. The `using-skill-audit` skill is written as a session-start discipline skill, so hosts that honor skill metadata should select it at the beginning of a conversation or task.
-- Claude Code, Cursor, and GitHub Copilot CLI use `hooks/session-start` through host-specific hook JSON to inject the Skill Ledger bootstrap at session start.
-- Claude Code also wires `hooks/observe-skill-call` through `PostToolUse`; native `Skill` tool calls are recorded as `native_observed`.
-- Cursor and GitHub Copilot CLI can route tool-use payloads into `hooks/observe-skill-call` as probe events. If the host exposes a `Skill` or `skill` tool payload, the same hook records it as `native_observed`; otherwise it records `tool_observed` probe events for later adapter tuning.
-- OpenCode registers the bundled skills and injects a superpowers-style resident bootstrap into the first user message. The bootstrap is wrapped in `<EXTREMELY_IMPORTANT>`, starts with `You have Skill Ledger.`, includes the `ALREADY LOADED` warning, carries the active `runId` and CLI commands, includes the full `using-skill-audit` skill body with frontmatter stripped, and appends `Tool Mapping for OpenCode`.
-- Gemini loads `GEMINI.md`, which references the bundled audit skills. The shared observation hook can record `context_observed` when a Gemini hook payload includes bundled `SKILL.md` content.
-- Kimi uses `sessionStart` plus `skillInstructions` in `.kimi-plugin/plugin.json`. If Kimi exposes tool or context hook payloads, pipe them to `hooks/observe-skill-call` to collect probe or context evidence.
-- Pi registers `skills/` and injects the same bootstrap from `.pi/extensions/skill-ledger.ts`; the Pi context injection is recorded as `context_observed`.
-- Antigravity and Factory Droid reuse the host plugin install routes documented above; Antigravity also has `skills/using-skill-audit/references/antigravity-tools.md` for tool mapping.
+Common credential patterns, bearer values, private keys, URL credentials, and known token formats are redacted before text is persisted.
 
-Codex plugins currently expose skills through metadata rather than an OpenCode-style message transform, so Codex persistence depends on the host's skill-selection mechanism. OpenCode, Pi, Claude Code, Cursor, and Copilot CLI receive explicit bootstrap injection.
+Automatic retention is disabled by default. Set `SKILL_LEDGER_RETENTION_DAYS=30`, or another positive number, to prune expired inactive run logs and reports whenever a new run starts.
 
-Evidence levels:
+Disable the runtime adapter with:
 
-- `native_observed`: host adapter directly observed a Skill tool call.
-- `context_observed`: host hook confirmed Skill content entered model context.
-- `self_reported`: model recorded its own skill usage by instruction.
-- `log_inferred`: usage was reconstructed from logs or transcript.
+```bash
+SKILL_LEDGER=off
+```
+
+## Skill Discovery
+
+Default discovery includes the plugin's skills, workspace and user skill directories, Codex plugin cache, and common local roots. Add roots with repeated `--skills` flags or `SKILL_LEDGER_SKILL_ROOTS`. Use `--only-skills` when a task should audit a deliberately restricted set.
+
+## Development
+
+```powershell
+npm install
+npm test
+npm pack --dry-run
+```
+
+The package intentionally excludes repository-only `.agents` development assets.

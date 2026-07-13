@@ -243,9 +243,20 @@ test("renderChineseMarkdownReport produces Chinese report sections and evidence 
   assert.match(markdown, /## 摘要/);
   assert.match(markdown, /## 已调用 Skills/);
   assert.match(markdown, /原生事件观测/);
-  assert.match(markdown, /上下文观测（较高置信度，确认 Skill 内容进入模型上下文）/);
-  assert.match(markdown, /## 未调用 Skills/);
+  assert.match(markdown, /context_observed — 上下文观测（较高置信度）/);
+  assert.doesNotMatch(markdown, /\| plugin-creator \| codex \| Create plugins \|/);
+  assert.match(markdown, /report --full/);
+  assert.match(markdown, /## 完整清单/);
   assert.match(markdown, /报告默认使用中文输出。/);
+
+  const fullMarkdown = renderChineseMarkdownReport({
+    runId: "run-1",
+    harness: "opencode",
+    discoveredSkills: [{ name: "plugin-creator", description: "Create plugins", source: "codex" }],
+    calledSkills: [],
+    notCalledSkills: [{ name: "plugin-creator", description: "Create plugins", source: "codex" }],
+  }, { includeInventory: true });
+  assert.match(fullMarkdown, /\| plugin-creator \| codex \| Create plugins \|/);
 });
 test("renderChineseMarkdownReport formats report timestamps as local display time", async () => {
   const markdown = renderChineseMarkdownReport({

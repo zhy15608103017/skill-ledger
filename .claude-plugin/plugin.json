@@ -1,12 +1,12 @@
 {
   "name": "skill-ledger",
   "description": "Cross-harness skill usage auditing with Chinese Markdown reports.",
-  "version": "0.1.1",
+  "version": "0.2.0",
   "author": {
-    "name": "Local developer"
+    "name": "zhy15608103017"
   },
-  "homepage": "https://github.com/<owner>/skill-ledger",
-  "repository": "https://github.com/<owner>/skill-ledger",
+  "homepage": "https://github.com/zhy15608103017/skill-ledger",
+  "repository": "https://github.com/zhy15608103017/skill-ledger",
   "license": "MIT",
   "keywords": [
     "skills",

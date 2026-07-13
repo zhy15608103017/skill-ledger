@@ -1,6 +1,6 @@
 {
   "name": "skill-ledger",
-  "version": "0.1.2",
+  "version": "0.2.0",
   "description": "Cross-harness skill usage auditing with Chinese Markdown reports",
   "type": "module",
   "main": ".opencode/plugins/skill-ledger.js",
@@ -15,7 +15,6 @@
     ".claude-plugin",
     ".codex-plugin",
     ".cursor-plugin",
-    ".agents",
     ".kimi-plugin",
     ".opencode",
     ".pi",
@@ -29,12 +28,12 @@
     "README.md",
     "package.json"
   ],
-  "author": "Local developer",
+  "author": "zhy15608103017",
   "license": "MIT",
-  "homepage": "https://github.com/<owner>/skill-ledger#readme",
+  "homepage": "https://github.com/zhy15608103017/skill-ledger#readme",
   "repository": {
     "type": "git",
-    "url": "git+https://github.com/<owner>/skill-ledger.git"
+    "url": "git+https://github.com/zhy15608103017/skill-ledger.git"
   },
   "keywords": [
     "skills",

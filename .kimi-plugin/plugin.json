@@ -1,9 +1,9 @@
 {
   "name": "skill-ledger",
-  "version": "0.1.1",
+  "version": "0.2.0",
   "description": "Record skill usage and generate Chinese Markdown reports.",
   "author": {
-    "name": "Local developer"
+    "name": "zhy15608103017"
   },
   "license": "MIT",
   "keywords": [
@@ -20,7 +20,7 @@
     "displayName": "Skill Ledger",
     "shortDescription": "Record skill usage and generate Chinese audit reports.",
     "longDescription": "Tracks discovered and called skills during a task, then writes a Chinese Markdown report for skill tuning across Kimi Code and other coding agents.",
-    "developerName": "Local developer",
+    "developerName": "zhy15608103017",
     "capabilities": [
       "Interactive",
       "Read",

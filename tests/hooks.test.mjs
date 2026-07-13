@@ -1,5 +1,5 @@
 import assert from "node:assert/strict";
-import { mkdir, mkdtemp, rm, writeFile } from "node:fs/promises";
+import { mkdir, mkdtemp, readFile, readdir, rm, writeFile } from "node:fs/promises";
 import { tmpdir } from "node:os";
 import { spawnSync } from "node:child_process";
 import path from "node:path";
@@ -9,6 +9,7 @@ import { readEvents } from "../core/audit-log.mjs";
 
 const hook = path.resolve("hooks", "session-start");
 const observeHook = path.resolve("hooks", "observe-skill-call");
+const sessionEndHook = path.resolve("hooks", "session-end");
 const pluginRoot = path.resolve(".");
 
 test("session-start hook emits Claude, Cursor, and SDK bootstrap shapes", async () => {
@@ -269,7 +270,7 @@ test("tool observation hook recognizes load-skill and invoke_skill as Skill tool
   }
 });
 
-test("tool observation hook records toolInputText for probe events", async () => {
+test("tool observation hook defaults to metadata-only probe events", async () => {
   const auditHome = await mkdtemp(path.join(tmpdir(), "skill-ledger-probe-text-"));
   try {
     const cursor = runHook({
@@ -292,8 +293,9 @@ test("tool observation hook records toolInputText for probe events", async () =>
     const events = await readEvents(path.join(auditHome, "runs", `${runId}.jsonl`));
     const probe = events.find((event) => event.event === "tool_observed");
     assert.ok(probe, "should record a tool_observed probe event");
-    assert.ok(typeof probe.toolInputText === "string" && probe.toolInputText.length > 0, "toolInputText should be populated");
-    assert.ok(/Button/i.test(probe.toolInputText));
+    assert.equal(probe.toolInputText, undefined);
+    assert.deepEqual(probe.toolInputKeys, ["path"]);
+    assert.match(probe.payloadHash, /^[a-f0-9]{64}$/);
   } finally {
     await rm(auditHome, { recursive: true, force: true });
   }
@@ -328,10 +330,116 @@ test("tool observation hook records Gemini context-loaded skills", async () => {
   }
 });
 
-function runHook({ auditHome, env }) {
+test("Claude hooks isolate concurrent sessions by host session id", async () => {
+  const auditHome = await mkdtemp(path.join(tmpdir(), "skill-ledger-session-isolation-"));
+  try {
+    const first = runHook({
+      auditHome,
+      env: { CLAUDE_PLUGIN_ROOT: pluginRoot, SKILL_LEDGER_HARNESS: "claude-code" },
+      payload: { session_id: "session-a", cwd: pluginRoot },
+    });
+    const second = runHook({
+      auditHome,
+      env: { CLAUDE_PLUGIN_ROOT: pluginRoot, SKILL_LEDGER_HARNESS: "claude-code" },
+      payload: { session_id: "session-b", cwd: pluginRoot },
+    });
+    const firstRunId = first.hookSpecificOutput.additionalContext.match(/runId: (\S+)/)?.[1];
+    const secondRunId = second.hookSpecificOutput.additionalContext.match(/runId: (\S+)/)?.[1];
+
+    runObserveHook({
+      auditHome,
+      env: { CLAUDE_PLUGIN_ROOT: pluginRoot, SKILL_LEDGER_HARNESS: "claude-code" },
+      payload: { session_id: "session-b", cwd: pluginRoot, hook_event_name: "PostToolUse", tool_name: "Skill", tool_input: { name: "brainstorming" } },
+    });
+
+    const firstEvents = await readEvents(path.join(auditHome, "runs", `${firstRunId}.jsonl`));
+    const secondEvents = await readEvents(path.join(auditHome, "runs", `${secondRunId}.jsonl`));
+    assert.equal(firstEvents.some((event) => event.skill === "brainstorming"), false);
+    assert.equal(secondEvents.some((event) => event.skill === "brainstorming" && event.evidence === "native_observed"), true);
+  } finally {
+    await rm(auditHome, { recursive: true, force: true });
+  }
+});
+
+test("Claude prompt hook records redacted task context", async () => {
+  const auditHome = await mkdtemp(path.join(tmpdir(), "skill-ledger-prompt-context-"));
+  try {
+    const bootstrap = runHook({
+      auditHome,
+      env: { CLAUDE_PLUGIN_ROOT: pluginRoot, SKILL_LEDGER_HARNESS: "claude-code" },
+      payload: { session_id: "prompt-session", cwd: pluginRoot },
+    });
+    const runId = bootstrap.hookSpecificOutput.additionalContext.match(/runId: (\S+)/)?.[1];
+    runObserveHook({
+      auditHome,
+      env: { CLAUDE_PLUGIN_ROOT: pluginRoot, SKILL_LEDGER_HARNESS: "claude-code" },
+      payload: { session_id: "prompt-session", cwd: pluginRoot, hook_event_name: "UserPromptSubmit", prompt: "Fix login password=super-secret" },
+    });
+
+    const events = await readEvents(path.join(auditHome, "runs", `${runId}.jsonl`));
+    const context = events.find((event) => event.event === "task_context");
+    assert.match(context.text, /Fix login/);
+    assert.match(context.text, /password=\[REDACTED\]/);
+    assert.doesNotMatch(context.text, /super-secret/);
+  } finally {
+    await rm(auditHome, { recursive: true, force: true });
+  }
+});
+
+test("diagnostic privacy mode stores only redacted probe text", async () => {
+  const auditHome = await mkdtemp(path.join(tmpdir(), "skill-ledger-diagnostic-probe-"));
+  try {
+    const bootstrap = runHook({
+      auditHome,
+      env: { CLAUDE_PLUGIN_ROOT: pluginRoot, SKILL_LEDGER_HARNESS: "claude-code", SKILL_LEDGER_PRIVACY: "diagnostic" },
+      payload: { session_id: "diagnostic-session", cwd: pluginRoot },
+    });
+    const runId = bootstrap.hookSpecificOutput.additionalContext.match(/runId: (\S+)/)?.[1];
+    runObserveHook({
+      auditHome,
+      env: { CLAUDE_PLUGIN_ROOT: pluginRoot, SKILL_LEDGER_HARNESS: "claude-code", SKILL_LEDGER_PRIVACY: "diagnostic" },
+      payload: { session_id: "diagnostic-session", cwd: pluginRoot, hook_event_name: "PostToolUse", tool_name: "read_file", tool_input: { path: "src/auth.ts", apiKey: "sk-abcdefghijklmnopqrstuvwxyz" } },
+    });
+
+    const events = await readEvents(path.join(auditHome, "runs", `${runId}.jsonl`));
+    const probe = events.find((event) => event.event === "tool_observed");
+    assert.match(probe.toolInputText, /src\/auth\.ts/);
+    assert.match(probe.toolInputText, /\[REDACTED_TOKEN\]|\[REDACTED\]/);
+    assert.doesNotMatch(probe.toolInputText, /sk-abcdefghijklmnopqrstuvwxyz/);
+  } finally {
+    await rm(auditHome, { recursive: true, force: true });
+  }
+});
+
+test("Claude SessionEnd finishes the exact session and writes its report", async () => {
+  const auditHome = await mkdtemp(path.join(tmpdir(), "skill-ledger-session-end-"));
+  try {
+    const bootstrap = runHook({
+      auditHome,
+      env: { CLAUDE_PLUGIN_ROOT: pluginRoot, SKILL_LEDGER_HARNESS: "claude-code" },
+      payload: { session_id: "end-session", cwd: pluginRoot },
+    });
+    const runId = bootstrap.hookSpecificOutput.additionalContext.match(/runId: (\S+)/)?.[1];
+    runSessionEndHook({
+      auditHome,
+      env: { CLAUDE_PLUGIN_ROOT: pluginRoot, SKILL_LEDGER_HARNESS: "claude-code" },
+      payload: { session_id: "end-session", cwd: pluginRoot, hook_event_name: "SessionEnd" },
+    });
+
+    const events = await readEvents(path.join(auditHome, "runs", `${runId}.jsonl`));
+    assert.equal(events.filter((event) => event.event === "task_end").length, 1);
+    assert.match(await readFile(path.join(auditHome, "reports", `${runId}.md`), "utf8"), new RegExp(runId));
+    assert.deepEqual(await readdir(path.join(auditHome, "active")), []);
+  } finally {
+    await rm(auditHome, { recursive: true, force: true });
+  }
+});
+
+function runHook({ auditHome, env, payload = {} }) {
   const result = spawnSync(process.execPath, [hook], {
     cwd: pluginRoot,
     encoding: "utf8",
+    input: JSON.stringify(payload),
     env: {
       ...process.env,
       SKILL_LEDGER: "",
@@ -344,6 +452,23 @@ function runHook({ auditHome, env }) {
 
   assert.equal(result.status, 0, result.stderr || result.stdout);
   return JSON.parse(result.stdout);
+}
+
+function runSessionEndHook({ auditHome, env, payload }) {
+  const result = spawnSync(process.execPath, [sessionEndHook], {
+    cwd: pluginRoot,
+    encoding: "utf8",
+    input: JSON.stringify(payload),
+    env: {
+      ...process.env,
+      SKILL_LEDGER: "",
+      SKILL_LEDGER_SKILL_ROOTS: "",
+      SKILL_LEDGER_SKILLS: "",
+      ...env,
+      SKILL_LEDGER_HOME: auditHome,
+    },
+  });
+  assert.equal(result.status, 0, result.stderr || result.stdout);
 }
 
 function runObserveHook({ auditHome, env, payload }) {

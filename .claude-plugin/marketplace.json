@@ -2,16 +2,16 @@
   "name": "skill-ledger-dev",
   "description": "Development marketplace for Skill Ledger.",
   "owner": {
-    "name": "Local developer"
+    "name": "zhy15608103017"
   },
   "plugins": [
     {
       "name": "skill-ledger",
       "description": "Cross-harness skill usage auditing with Chinese Markdown reports.",
-      "version": "0.1.1",
+      "version": "0.2.0",
       "source": "./",
       "author": {
-        "name": "Local developer"
+        "name": "zhy15608103017"
       }
     }
   ]

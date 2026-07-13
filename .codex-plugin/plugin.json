@@ -1,9 +1,10 @@
 {
   "name": "skill-ledger",
-  "version": "0.1.1",
+  "version": "0.2.0+codex.20260713043255",
   "description": "Cross-harness skill usage auditing with Chinese Markdown reports.",
   "author": {
-    "name": "Local developer"
+    "name": "zhy15608103017",
+    "url": "https://github.com/zhy15608103017"
   },
   "license": "MIT",
   "keywords": [
@@ -13,12 +14,11 @@
     "developer-tools"
   ],
   "skills": "./skills/",
-  "hooks": {},
   "interface": {
     "displayName": "Skill Ledger",
     "shortDescription": "Record skill usage and generate Chinese audit reports.",
-    "longDescription": "Skill Ledger records which skills were discovered and called during a task, then writes a Chinese Markdown report for skill tuning across Codex, OpenCode, Claude Code, Cursor, Copilot CLI, Gemini, Kimi Code, Pi, Antigravity, Factory Droid, and related coding agents.",
-    "developerName": "Local developer",
+    "longDescription": "Skill Ledger records discovered and called skills with explicit evidence levels, privacy-aware task context, session isolation, and concise Chinese reports. Codex, Claude Code, and OpenCode are verified Tier 1 hosts; other bundled adapters are experimental.",
+    "developerName": "zhy15608103017",
     "category": "Developer Tools",
     "capabilities": [
       "Interactive",

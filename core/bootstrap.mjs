@@ -12,7 +12,7 @@ export function stripSkillFrontmatter(skillText) {
   return skillText.replace(/^---\r?\n[\s\S]*?\r?\n---\r?\n*/, "");
 }
 
-export function buildBootstrapText({ runId, pluginRoot, logFile, harness, skillText = "" }) {
+export function buildBootstrapText({ runId, pluginRoot, logFile, harness, sessionId = "", skillText = "" }) {
   const script = path.join(pluginRoot, "scripts", "skill-ledger.mjs");
   const callCommand = `node "${script}" call --run-id ${runId} --skill <skill-name> --evidence self_reported --reason "<Chinese reason for using this skill>"`;
   const finishCommand = `node "${script}" finish --run-id ${runId}`;
@@ -28,6 +28,7 @@ You have Skill Ledger.
 
 - runId: ${runId}
 - harness: ${harness || "unknown"}
+- sessionId: ${sessionId || "unavailable"}
 - logFile: ${logFile}
 - pluginRoot: ${pluginRoot}
 

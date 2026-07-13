@@ -1,5 +1,5 @@
 import assert from "node:assert/strict";
-import { mkdir, mkdtemp, readFile, writeFile } from "node:fs/promises";
+import { mkdir, mkdtemp, readFile, readdir, writeFile } from "node:fs/promises";
 import { tmpdir } from "node:os";
 import path from "node:path";
 import { spawnSync } from "node:child_process";
@@ -188,12 +188,17 @@ test("CLI finish writes the default report unless disabled", async () => {
   const output = path.resolve(reportOutput);
   const markdown = await readFile(output, "utf8");
 
-  assert.match(path.basename(output), /^\d{4}-\d{2}-\d{2} \d{2}-\d{2}-\d{2}\.md$/);
-  assert.notEqual(path.basename(output), "finish-report.md");
+  assert.equal(path.basename(output), "finish-report.md");
   assert.match(markdown, /finish-report/);
   assert.match(markdown, /auto report/);
   assert.match(markdown, /\d{4}-\d{2}-\d{2} \d{2}:\d{2}:\d{2}/);
   assert.doesNotMatch(markdown, /\d{4}-\d{2}-\d{2}T\d{2}:/);
+  assert.deepEqual(await readdir(path.join(cwd, ".skill-ledger", "active")), []);
+
+  const rejectedCall = runFailure([
+    "call", "--run-id", "finish-report", "--skill", "brainstorming", "--reason", "too late",
+  ], cwd);
+  assert.match(rejectedCall.stderr, /already finished/);
 
   const noReportCwd = await mkdtemp(path.join(tmpdir(), "skill-ledger-finish-no-report-"));
   const noReportSkillDir = path.join(noReportCwd, "skills", "brainstorming");
@@ -361,6 +366,23 @@ function run(args, cwd, options = {}) {
   return result;
 }
 
+function runFailure(args, cwd, options = {}) {
+  const result = spawnSync(process.execPath, [script, ...args], {
+    cwd: path.resolve("."),
+    encoding: "utf8",
+    input: options.input,
+    env: {
+      ...process.env,
+      SKILL_LEDGER_HOME: path.join(cwd, ".skill-ledger"),
+      SKILL_LEDGER_SKILL_ROOTS: "",
+      SKILL_LEDGER_SKILLS: "",
+      ...options.env,
+    },
+  });
+  assert.notEqual(result.status, 0, result.stdout);
+  return result;
+}
+
 test("CLI start accepts --task-context and it appears in the audit log", async () => {
   const cwd = await mkdtemp(path.join(tmpdir(), "skill-ledger-cli-taskctx-"));
   const skillDir = path.join(cwd, "skills", "image-generation");
@@ -392,6 +414,17 @@ test("CLI start accepts --task-context and it appears in the audit log", async (
   const startEvent = events.find((event) => event.event === "task_start");
   assert.ok(startEvent, "task_start should be recorded");
   assert.equal(startEvent.taskContext, "用户要求生成一张产品图片");
+});
+
+test("CLI start accepts task context over stdin without putting it in argv", async () => {
+  const cwd = await mkdtemp(path.join(tmpdir(), "skill-ledger-cli-taskctx-stdin-"));
+  run(["start", "--run-id", "taskctx-stdin", "--harness", "codex", "--cwd", cwd, "--only-skills", "--task-context-stdin"], cwd, {
+    input: "Fix auth with Authorization: Bearer secret-token",
+  });
+  const events = await readEvents(path.join(cwd, ".skill-ledger", "runs", "taskctx-stdin.jsonl"));
+  const context = events.find((event) => event.event === "task_start").taskContext;
+  assert.match(context, /Authorization=\[REDACTED\]/);
+  assert.doesNotMatch(context, /secret-token/);
 });
 
 test("CLI task-context subcommand appends a task_context event", async () => {
@@ -448,4 +481,10 @@ test("CLI call normalizes skill names with prefixes and paths", async () => {
   const call = events.find((event) => event.event === "skill_called");
   assert.ok(call, "skill_called should be recorded");
   assert.equal(call.skill, "Brainstorming");
+});
+
+test("CLI rejects run ids that could escape the audit directory", async () => {
+  const cwd = await mkdtemp(path.join(tmpdir(), "skill-ledger-cli-run-id-"));
+  const result = runFailure(["start", "--run-id", "../escape", "--harness", "codex", "--cwd", cwd], cwd);
+  assert.match(result.stderr, /Invalid --run-id/);
 });

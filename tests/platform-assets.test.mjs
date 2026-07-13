@@ -33,6 +33,9 @@ test("platform manifests expose Skill Ledger skills and startup bootstrap", asyn
   assert.equal(claude.skills, "./skills/");
   assert.equal(claude.hooks, undefined);
   assert.match(await readFile("hooks/hooks.json", "utf8"), /observe-skill-call/);
+  assert.match(await readFile("hooks/hooks.json", "utf8"), /UserPromptSubmit/);
+  assert.match(await readFile("hooks/hooks.json", "utf8"), /SessionEnd/);
+  assert.match(await readFile("hooks/hooks.json", "utf8"), /node \\\"\$\{CLAUDE_PLUGIN_ROOT\}\/hooks\/session-end\\\"/);
   assert.equal(cursor.skills, "./skills/");
   assert.equal(cursor.hooks, "./hooks/hooks-cursor.json");
   assert.match(await readFile("hooks/hooks-cursor.json", "utf8"), /observe-skill-call/);
@@ -45,6 +48,20 @@ test("platform manifests expose Skill Ledger skills and startup bootstrap", asyn
   assert.match(piExtension, /resources_discover[\s\S]*collectSkillRoots/);
   assert.deepEqual(pkg.pi.skills, ["./skills"]);
   assert.deepEqual(pkg.pi.extensions, ["./.pi/extensions/skill-ledger.ts"]);
+
+  const baseVersion = pkg.version;
+  for (const manifest of [claude, cursor, codex, kimi, gemini]) {
+    assert.equal(String(manifest.version).split("+")[0], baseVersion);
+  }
+});
+
+test("Tier 1 documentation is explicit and publish metadata has no placeholders", async () => {
+  const readme = await readFile("README.md", "utf8");
+  assert.match(readme, /Tier 1: verified/);
+  for (const host of ["Codex", "Claude Code", "OpenCode"]) assert.match(readme, new RegExp(host));
+  assert.match(readme, /self_reported/);
+  assert.match(readme, /native_observed/);
+  assert.doesNotMatch(readme, /<owner>|Local developer/);
 });
 
 test("platform tool mapping references document fallback behavior", async () => {

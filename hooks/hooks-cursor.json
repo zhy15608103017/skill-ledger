@@ -3,12 +3,12 @@
   "hooks": {
     "sessionStart": [
       {
-        "command": "./hooks/run-hook.cmd session-start"
+        "command": "node ./hooks/session-start"
       }
     ],
     "postToolUse": [
       {
-        "command": "./hooks/run-hook.cmd observe-skill-call"
+        "command": "node ./hooks/observe-skill-call"
       }
     ]
   }

@@ -1,10 +1,10 @@
 param(
-  [string]$RepoUrl = "https://github.com/<owner>/skill-ledger"
+  [string]$RepoUrl = "https://github.com/zhy15608103017/skill-ledger"
 )
 
 $ErrorActionPreference = "Stop"
 
-# Example: /plugins install https://github.com/<owner>/skill-ledger
+# Example: /plugins install https://github.com/zhy15608103017/skill-ledger
 Write-Host "Skill Ledger Kimi Code install command:"
 Write-Host "/plugins install $RepoUrl"
 Write-Host ""

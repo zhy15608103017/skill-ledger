@@ -1,5 +1,5 @@
 param(
-  [string]$Marketplace = "https://github.com/<owner>/skill-ledger",
+  [string]$Marketplace = "https://github.com/zhy15608103017/skill-ledger",
   [string]$PluginSpec = "skill-ledger@skill-ledger",
   [switch]$PrintOnly
 )
@@ -18,9 +18,9 @@ Write-Host ""
 Write-Host "This is an install-route compatibility surface. Verify in a fresh Droid session before treating it as fully validated."
 
 $droid = Get-Command droid -ErrorAction SilentlyContinue
-if ($PrintOnly -or -not $droid -or $Marketplace.Contains("<owner>")) {
+if ($PrintOnly -or -not $droid) {
   Write-Host ""
-  Write-Host "Run these commands after replacing <owner> and confirming Droid is available."
+  Write-Host "Run these commands after confirming Droid is available."
   exit 0
 }
 

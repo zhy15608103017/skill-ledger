@@ -9,13 +9,14 @@ import { createInterface } from "node:readline/promises";
 import { stdin as input, stdout as output } from "node:process";
 
 import { appendEvent, readEvents, summarizeRun } from "../core/audit-log.mjs";
-import { listActiveRuns, readActiveRun, writeActiveRun } from "../core/active-run.mjs";
+import { clearActiveRun, listActiveRuns, readActiveRun, writeActiveRun } from "../core/active-run.mjs";
 import { renderChineseMarkdownReport } from "../core/report-md.mjs";
+import { privacySettings, sanitizeTaskContext } from "../core/privacy.mjs";
+import { pruneAuditData } from "../core/retention.mjs";
 import { scanSkillRoots } from "../core/skill-scanner.mjs";
 import { collectSkillRoots } from "../core/skill-roots.mjs";
-import { formatLocalTimestampForFileName } from "../core/time-format.mjs";
 
-const BOOLEAN_FLAGS = new Set(["only-skills", "skills-only", "no-report", "skip-codex-add", "print-only"]);
+const BOOLEAN_FLAGS = new Set(["only-skills", "skills-only", "no-report", "full", "task-context-stdin", "skip-codex-add", "print-only"]);
 const VALUE_FLAGS = new Set([
   "run-id",
   "harness",
@@ -35,6 +36,12 @@ const VALUE_FLAGS = new Set([
   "limit",
   "task-context",
   "text",
+  "session-id",
+  "privacy",
+  "retention-days",
+  "startup-skill",
+  "startup-evidence",
+  "days",
 ]);
 const KNOWN_FLAGS = new Set([...BOOLEAN_FLAGS, ...VALUE_FLAGS]);
 
@@ -53,6 +60,7 @@ try {
   else if (command === "report") await writeReport(args);
   else if (command === "status") await showStatus(args);
   else if (command === "runs") await listRuns(args);
+  else if (command === "prune") await pruneRuns(args);
   else if (command === "install-opencode") await installOpenCode(args);
   else if (command === "install-codex") installCodex(args);
   else if (command === "install-claude") installClaude(args);
@@ -103,40 +111,40 @@ async function showQuickInstallMenu() {
     }
     if (["5", "copilot", "github copilot", "github copilot cli", "copilot cli"].includes(answer)) {
       printInstallGuidance("GitHub Copilot CLI", [
-        "copilot plugin marketplace add <owner>/skill-ledger-marketplace",
-        "copilot plugin install skill-ledger@skill-ledger-marketplace",
+        "copilot plugin marketplace add zhy15608103017/skill-ledger",
+        "copilot plugin install skill-ledger@skill-ledger",
       ]);
       return;
     }
     if (["6", "kimi", "kimi code"].includes(answer)) {
       printInstallGuidance("Kimi Code", [
-        "/plugins install https://github.com/<owner>/skill-ledger",
+        "/plugins install https://github.com/zhy15608103017/skill-ledger",
       ]);
       return;
     }
     if (answer === "7" || answer === "gemini") {
       printInstallGuidance("Gemini", [
-        "gemini extensions install https://github.com/<owner>/skill-ledger",
+        "gemini extensions install https://github.com/zhy15608103017/skill-ledger",
       ]);
       return;
     }
     if (answer === "8" || answer === "pi") {
       printInstallGuidance("Pi", [
-        "pi install git:github.com/<owner>/skill-ledger",
+        "pi install git:github.com/zhy15608103017/skill-ledger",
         "For local development: pi -e /path/to/skill-ledger",
       ]);
       return;
     }
     if (answer === "9" || answer === "antigravity" || answer === "agy") {
       printInstallGuidance("Antigravity", [
-        "agy plugin install https://github.com/<owner>/skill-ledger",
+        "agy plugin install https://github.com/zhy15608103017/skill-ledger",
         "This is an install-route compatibility surface; verify with a fresh Antigravity session before treating it as fully validated.",
       ]);
       return;
     }
     if (["10", "factory", "factory droid", "droid"].includes(answer)) {
       printInstallGuidance("Factory Droid", [
-        "droid plugin marketplace add https://github.com/<owner>/skill-ledger",
+        "droid plugin marketplace add https://github.com/zhy15608103017/skill-ledger",
         "droid plugin install skill-ledger@skill-ledger",
       ]);
       return;
@@ -158,8 +166,16 @@ function printInstallGuidance(toolName, commands) {
 
 async function startRun(options) {
   const cwd = path.resolve(options.cwd || process.cwd());
-  const runId = options["run-id"] || createRunId();
+  const runId = validateRunId(options["run-id"] || createRunId());
   const logFile = logPath(runId, cwd);
+  const sessionId = options["session-id"] || "";
+  const settings = privacySettings({
+    ...process.env,
+    SKILL_LEDGER_PRIVACY: options.privacy || process.env.SKILL_LEDGER_PRIVACY,
+    SKILL_LEDGER_RETENTION_DAYS: options["retention-days"] || process.env.SKILL_LEDGER_RETENTION_DAYS,
+  });
+  const rawTaskContext = options["task-context-stdin"] === "true" ? await readStdinText() : options["task-context"];
+  const retention = await pruneAuditData(auditHome(cwd), { retentionDays: settings.retentionDays });
   const configuredRoots = arrayOption(options.skills);
   const skillRoots = collectSkillRoots({
     cwd,
@@ -174,7 +190,10 @@ async function startRun(options) {
     runId,
     harness: options.harness || "unknown",
     cwd,
-    taskContext: options["task-context"] || "",
+    sessionId,
+    privacyMode: settings.mode,
+    retentionDays: settings.retentionDays,
+    taskContext: sanitizeTaskContext(rawTaskContext, { mode: settings.mode }),
   });
 
   for (const skill of discovered) {
@@ -185,21 +204,34 @@ async function startRun(options) {
     });
   }
 
+  if (options["startup-skill"]) {
+    await appendEvent(logFile, {
+      event: "skill_called",
+      runId,
+      skill: options["startup-skill"],
+      evidence: options["startup-evidence"] || "self_reported",
+      reason: "Skill Ledger startup workflow",
+    });
+  }
+
   await writeActiveRun({
     auditHome: auditHome(cwd),
     harness: options.harness || "unknown",
     runId,
     logFile,
     cwd,
+    sessionId,
+    privacyMode: settings.mode,
   });
 
-  printJson({ runId, logFile, discoveredCount: discovered.length });
+  printJson({ runId, logFile, sessionId, privacyMode: settings.mode, retention, discoveredCount: discovered.length });
 }
 
 async function recordSkillCall(options) {
-  const runId = required(options, "run-id");
+  const runId = validateRunId(required(options, "run-id"));
   const skill = required(options, "skill");
   const cwd = path.resolve(options.cwd || process.cwd());
+  await assertRunOpen(runId, cwd);
   const { normalizeSkillName } = await import("../core/skill-name.mjs");
   const normalized = normalizeSkillName(skill);
   const event = await appendEvent(logPath(runId, cwd), {
@@ -213,8 +245,9 @@ async function recordSkillCall(options) {
 }
 
 async function recordNote(options) {
-  const runId = required(options, "run-id");
+  const runId = validateRunId(required(options, "run-id"));
   const cwd = path.resolve(options.cwd || process.cwd());
+  await assertRunOpen(runId, cwd);
   const event = await appendEvent(logPath(runId, cwd), {
     event: "audit_note",
     runId,
@@ -224,36 +257,40 @@ async function recordNote(options) {
 }
 
 async function recordTaskContext(options) {
-  const runId = required(options, "run-id");
+  const runId = validateRunId(required(options, "run-id"));
   const cwd = path.resolve(options.cwd || process.cwd());
+  const events = await assertRunOpen(runId, cwd);
+  const mode = events.find((event) => event.event === "task_start")?.privacyMode || "balanced";
   const event = await appendEvent(logPath(runId, cwd), {
     event: "task_context",
     runId,
-    text: required(options, "text"),
+    text: sanitizeTaskContext(required(options, "text"), { mode }),
   });
   printJson({ recorded: true, event });
 }
 
 async function finishRun(options) {
-  const runId = required(options, "run-id");
+  const runId = validateRunId(required(options, "run-id"));
   const cwd = path.resolve(options.cwd || process.cwd());
-  const event = await appendEvent(logPath(runId, cwd), {
-    event: "task_end",
-    runId,
-  });
-  if (options["no-report"] === "true") {
-    printJson({ recorded: true, event });
-    return;
+  const events = await readEvents(logPath(runId, cwd));
+  if (!events.length) throw new Error(`Unknown audit run: ${runId}`);
+  const existingEnd = events.find((item) => item.event === "task_end");
+  const event = existingEnd || await appendEvent(logPath(runId, cwd), { event: "task_end", runId });
+  let reportOutput = "";
+  try {
+    if (options["no-report"] !== "true") {
+      reportOutput = await writeReportFile({ runId, cwd, output: options.output, includeInventory: options.full === "true" });
+    }
+  } finally {
+    await clearActiveRun({ auditHome: auditHome(cwd), runId });
   }
-
-  const reportOutput = await writeReportFile({ runId, cwd, output: options.output });
-  printJson({ recorded: true, event, reportOutput });
+  printJson({ recorded: !existingEnd, alreadyFinished: Boolean(existingEnd), event, reportOutput: reportOutput || undefined });
 }
 
 async function writeReport(options) {
-  const runId = required(options, "run-id");
+  const runId = validateRunId(required(options, "run-id"));
   const cwd = path.resolve(options.cwd || process.cwd());
-  const output = await writeReportFile({ runId, cwd, output: options.output });
+  const output = await writeReportFile({ runId, cwd, output: options.output, includeInventory: options.full === "true" });
   printJson({ output });
 }
 
@@ -261,9 +298,16 @@ async function showStatus(options) {
   const cwd = path.resolve(options.cwd || process.cwd());
   const home = auditHome(cwd);
   const harness = options.harness || "unknown";
-  const activeRun = await readActiveRun({ auditHome: home, harness });
+  const activeRun = await readActiveRun({ auditHome: home, harness, sessionId: options["session-id"] || "", cwd });
   const allActive = await listActiveRuns(home);
   printJson({ auditHome: home, cwd, harness, activeRun, allActive });
+}
+
+async function pruneRuns(options) {
+  const cwd = path.resolve(options.cwd || process.cwd());
+  const days = Number(required(options, "days"));
+  if (!Number.isFinite(days) || days <= 0) throw new Error("--days must be a positive number");
+  printJson(await pruneAuditData(auditHome(cwd), { retentionDays: days }));
 }
 
 async function listRuns(options) {
@@ -300,15 +344,23 @@ async function listRuns(options) {
   printJson({ auditHome: home, count: limited.length, total: runs.length, runs: limited });
 }
 
-async function writeReportFile({ runId, cwd, output }) {
+async function writeReportFile({ runId, cwd, output, includeInventory = false }) {
   const events = await readEvents(logPath(runId, cwd));
+  if (!events.length) throw new Error(`Unknown audit run: ${runId}`);
   const summary = summarizeRun(events);
-  const markdown = renderChineseMarkdownReport(summary);
-  const defaultOutput = path.join(auditHome(cwd), "reports", `${formatLocalTimestampForFileName(new Date())}.md`);
+  const markdown = renderChineseMarkdownReport(summary, { includeInventory });
+  const defaultOutput = path.join(auditHome(cwd), "reports", `${runId}.md`);
   const reportOutput = path.resolve(cwd, output || defaultOutput);
   await mkdir(path.dirname(reportOutput), { recursive: true });
   await writeFile(reportOutput, markdown);
   return reportOutput;
+}
+
+async function assertRunOpen(runId, cwd) {
+  const events = await readEvents(logPath(runId, cwd));
+  if (!events.length) throw new Error(`Unknown audit run: ${runId}`);
+  if (events.some((event) => event.event === "task_end")) throw new Error(`Audit run is already finished: ${runId}`);
+  return events;
 }
 
 async function installOpenCode(options) {
@@ -392,6 +444,22 @@ function createRunId() {
   return `${stamp}-${randomUUID().slice(0, 8)}`;
 }
 
+function validateRunId(value) {
+  const runId = String(value || "").trim();
+  if (!/^[a-z0-9._-]+$/i.test(runId)) throw new Error("Invalid --run-id: use only letters, numbers, dots, underscores, and hyphens");
+  return runId;
+}
+
+function readStdinText() {
+  return new Promise((resolvePromise, reject) => {
+    let content = "";
+    input.setEncoding("utf8");
+    input.on("data", (chunk) => { content += chunk; });
+    input.on("end", () => resolvePromise(content));
+    input.on("error", reject);
+  });
+}
+
 function parseArgs(argv) {
   const parsed = {};
   for (let index = 0; index < argv.length; index += 1) {
@@ -458,14 +526,15 @@ function runCommand(commandName, commandArgs) {
 
 function usage(exitCode) {
   console.error(`Usage:
-  node scripts/skill-ledger.mjs start --run-id <id> --harness <name> --cwd <path> [--skills <skills-dir>] [--only-skills] [--task-context <text>]
+  node scripts/skill-ledger.mjs start --run-id <id> --harness <name> --cwd <path> [--session-id <id>] [--skills <skills-dir>] [--only-skills] [--task-context <text> | --task-context-stdin] [--privacy strict|balanced|diagnostic] [--retention-days <n>]
   node scripts/skill-ledger.mjs call --run-id <id> --skill <name> [--evidence self_reported] [--reason <text>]
   node scripts/skill-ledger.mjs note --run-id <id> --note <text>
   node scripts/skill-ledger.mjs task-context --run-id <id> --text <text>
-  node scripts/skill-ledger.mjs finish --run-id <id> [--no-report] [--output <report.md>]
-  node scripts/skill-ledger.mjs report --run-id <id> [--output <report.md>]
-  node scripts/skill-ledger.mjs status [--harness <name>] [--cwd <path>]
+  node scripts/skill-ledger.mjs finish --run-id <id> [--no-report] [--full] [--output <report.md>]
+  node scripts/skill-ledger.mjs report --run-id <id> [--full] [--output <report.md>]
+  node scripts/skill-ledger.mjs status [--harness <name>] [--session-id <id>] [--cwd <path>]
   node scripts/skill-ledger.mjs runs [--limit <n>] [--cwd <path>]
+  node scripts/skill-ledger.mjs prune --days <n> [--cwd <path>]
   node scripts/skill-ledger.mjs install-opencode [--config <opencode.json>] [--plugin <plugin-spec>]
   node scripts/skill-ledger.mjs install-codex [--marketplace <marketplace.json>] [--skip-codex-add]
   node scripts/skill-ledger.mjs install-claude [--marketplace <marketplace.json>] [--plugin-spec <plugin@marketplace>] [--scope user|project|local] [--print-only]

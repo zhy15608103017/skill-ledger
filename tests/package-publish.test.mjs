@@ -11,6 +11,10 @@ test("package metadata is ready for npm and git distribution", async () => {
   assert.ok(pkg.files.includes(".codex-plugin"));
   assert.ok(pkg.files.includes(".opencode"));
   assert.ok(pkg.files.includes("skills"));
+  assert.ok(!pkg.files.includes(".agents"));
+  assert.equal(pkg.author, "zhy15608103017");
+  assert.match(pkg.homepage, /github\.com\/zhy15608103017\/skill-ledger/);
+  assert.doesNotMatch(JSON.stringify(pkg), /<owner>|Local developer/);
   assert.match(readme, /skill-ledger/);
   assert.match(readme, /npm/);
   assert.match(readme, /git\+https/);
