@@ -366,3 +366,348 @@ test("renderChineseMarkdownReport includes possibly missed skills section when p
   assert.match(markdown, /verification-before-completion/);
   assert.match(markdown, /\| 较高 \|/);
 });
+
+test("normalizeSkillName strips prefixes, namespaces, paths, and SKILL.md suffix", async () => {
+  const { normalizeSkillName } = await import("../core/skill-name.mjs");
+  assert.equal(normalizeSkillName("/brainstorming"), "brainstorming");
+  assert.equal(normalizeSkillName("@brainstorming"), "brainstorming");
+  assert.equal(normalizeSkillName("skill-ledger:generate-skill-audit-report"), "generate-skill-audit-report");
+  assert.equal(normalizeSkillName("owner/skill-ledger:brainstorming"), "brainstorming");
+  assert.equal(normalizeSkillName("skills\\brainstorming\\SKILL.md"), "brainstorming");
+  assert.equal(normalizeSkillName("skills/brainstorming/SKILL.md"), "brainstorming");
+  assert.equal(normalizeSkillName("Brainstorming"), "Brainstorming");
+});
+
+test("isSkillTool matches known and flexible skill tool names", async () => {
+  const { isSkillTool } = await import("../core/skill-name.mjs");
+  assert.ok(isSkillTool("Skill"));
+  assert.ok(isSkillTool("skill"));
+  assert.ok(isSkillTool("SkillTool"));
+  assert.ok(isSkillTool("load-skill"));
+  assert.ok(isSkillTool("invoke_skill"));
+  assert.ok(isSkillTool("applySkill"));
+  assert.ok(!isSkillTool("read_file"));
+  assert.ok(!isSkillTool("bash"));
+  assert.ok(!isSkillTool(""));
+});
+
+test("canonicalSkillName maps case-insensitive and prefixed calls to discovered names", async () => {
+  const { canonicalSkillName, skillNameKey } = await import("../core/skill-name.mjs");
+  const discoveredByKey = new Map([["brainstorming", "brainstorming"]]);
+
+  assert.equal(canonicalSkillName("Brainstorming", discoveredByKey), "brainstorming");
+  assert.equal(canonicalSkillName("plugin:brainstorming", discoveredByKey), "brainstorming");
+  assert.equal(canonicalSkillName("skills/Brainstorming/SKILL.md", discoveredByKey), "brainstorming");
+  assert.equal(canonicalSkillName("unknown-skill", discoveredByKey), "unknown-skill");
+  assert.equal(skillNameKey("BrainStorming"), skillNameKey("brainstorming"));
+});
+
+test("summarizeRun matches case-insensitive and path-suffixed skill calls to discovered skills", async () => {
+  const root = await mkdtemp(path.join(tmpdir(), "skill-audit-normalize-"));
+  const logFile = path.join(root, "runs", "run-norm.jsonl");
+
+  await appendEvent(logFile, { event: "task_start", runId: "run-norm", harness: "codex", cwd: root });
+  await appendEvent(logFile, {
+    event: "skill_discovered",
+    skill: { name: "brainstorming", description: "Use before creative work", source: "superpowers" },
+  });
+  await appendEvent(logFile, {
+    event: "skill_called",
+    skill: "skills/Brainstorming/SKILL.md",
+    evidence: "self_reported",
+    reason: "path-suffixed call",
+  });
+
+  const summary = summarizeRun(await readEvents(logFile));
+
+  assert.deepEqual(summary.calledSkills.map((item) => item.name), ["brainstorming"]);
+  assert.deepEqual(summary.notCalledSkills.map((item) => item.name), []);
+});
+
+test("summarizeRun dedups same-evidence skill_called events from hook and model", async () => {
+  const root = await mkdtemp(path.join(tmpdir(), "skill-audit-dedup-"));
+  const logFile = path.join(root, "runs", "run-dedup.jsonl");
+
+  await appendEvent(logFile, { event: "task_start", runId: "run-dedup", harness: "opencode", cwd: root });
+  await appendEvent(logFile, {
+    event: "skill_discovered",
+    skill: { name: "brainstorming", description: "Use before creative work", source: "superpowers" },
+  });
+  // 两条相同证据等级的自报，应只保留第一条。
+  await appendEvent(logFile, {
+    event: "skill_called",
+    skill: "brainstorming",
+    evidence: "self_reported",
+    reason: "first self report",
+  });
+  await appendEvent(logFile, {
+    event: "skill_called",
+    skill: "brainstorming",
+    evidence: "self_reported",
+    reason: "second self report",
+  });
+
+  const summary = summarizeRun(await readEvents(logFile));
+
+  assert.equal(summary.calledSkills.length, 1);
+  assert.equal(summary.calledSkills[0].reason, "first self report");
+});
+
+test("summarizeRun marks self_reported-only calls as uncorroborated", async () => {
+  const root = await mkdtemp(path.join(tmpdir(), "skill-audit-corrob-"));
+  const logFile = path.join(root, "runs", "run-corrob.jsonl");
+
+  await appendEvent(logFile, { event: "task_start", runId: "run-corrob", harness: "codex", cwd: root });
+  await appendEvent(logFile, {
+    event: "skill_discovered",
+    skill: { name: "brainstorming", description: "Use before creative work", source: "superpowers" },
+  });
+  await appendEvent(logFile, {
+    event: "skill_discovered",
+    skill: { name: "code-review", description: "Run code review", source: "superpowers" },
+  });
+  await appendEvent(logFile, {
+    event: "skill_called",
+    skill: "brainstorming",
+    evidence: "self_reported",
+    reason: "self report only",
+  });
+  await appendEvent(logFile, {
+    event: "skill_called",
+    skill: "code-review",
+    evidence: "native_observed",
+    reason: "hook observed",
+  });
+
+  const summary = summarizeRun(await readEvents(logFile));
+  const brainstorming = summary.calledSkills.find((item) => item.name === "brainstorming");
+  const codeReview = summary.calledSkills.find((item) => item.name === "code-review");
+
+  assert.equal(brainstorming.corroborated, false);
+  assert.equal(codeReview.corroborated, true);
+});
+
+test("summarizeRun uses task_context events for possibly-missed detection", async () => {
+  const root = await mkdtemp(path.join(tmpdir(), "skill-audit-taskctx-"));
+  const logFile = path.join(root, "runs", "run-taskctx.jsonl");
+
+  await appendEvent(logFile, { event: "task_start", runId: "run-taskctx", harness: "codex", cwd: root });
+  await appendEvent(logFile, {
+    event: "skill_discovered",
+    skill: { name: "image-generation", description: "Generate bitmap images and photos", source: "tools" },
+  });
+  await appendEvent(logFile, {
+    event: "skill_discovered",
+    skill: { name: "code-review-loop", description: "Run code review before finishing", source: "superpowers" },
+  });
+  await appendEvent(logFile, {
+    event: "task_context",
+    runId: "run-taskctx",
+    text: "用户要求生成一张产品图片并审查代码",
+  });
+
+  const summary = summarizeRun(await readEvents(logFile));
+
+  assert.ok(summary.hasTaskContext);
+  const flagged = summary.possiblyMissedSkills.find((item) => item.name === "image-generation");
+  assert.ok(flagged, "image-generation should be flagged via task_context");
+});
+
+test("summarizeRun detects possibly missed skills via Chinese synonyms and segmentation", async () => {
+  const root = await mkdtemp(path.join(tmpdir(), "skill-audit-cn-"));
+  const logFile = path.join(root, "runs", "run-cn.jsonl");
+
+  await appendEvent(logFile, { event: "task_start", runId: "run-cn", harness: "codex", cwd: root });
+  await appendEvent(logFile, {
+    event: "skill_discovered",
+    skill: { name: "frontend-design", description: "Build distinctive web UI and frontend interfaces", source: "skills" },
+  });
+  await appendEvent(logFile, {
+    event: "skill_discovered",
+    skill: { name: "image-generation", description: "Generate bitmap images and photos", source: "tools" },
+  });
+  await appendEvent(logFile, {
+    event: "task_context",
+    runId: "run-cn",
+    text: "帮我做一个好看的界面和前端样式",
+  });
+
+  const summary = summarizeRun(await readEvents(logFile));
+
+  const flagged = summary.possiblyMissedSkills.find((item) => item.name === "frontend-design");
+  assert.ok(flagged, "frontend-design should be flagged via Chinese 界面/前端 synonym matching UI/frontend");
+  assert.ok(
+    !summary.possiblyMissedSkills.some((item) => item.name === "image-generation"),
+    "image-generation has no context overlap and must not be flagged",
+  );
+});
+
+test("summarizeRun uses tool_observed probe text as weak signal for possibly-missed detection", async () => {
+  const root = await mkdtemp(path.join(tmpdir(), "skill-audit-toolobs-"));
+  const logFile = path.join(root, "runs", "run-toolobs.jsonl");
+
+  await appendEvent(logFile, { event: "task_start", runId: "run-toolobs", harness: "cursor", cwd: root });
+  await appendEvent(logFile, {
+    event: "skill_discovered",
+    skill: { name: "frontend-design", description: "Build distinctive web UI and frontend interfaces", source: "skills" },
+  });
+  // 没有 task_context，没有 skill_called，只有 tool_observed 探针事件携带 UI 相关文本。
+  await appendEvent(logFile, {
+    event: "tool_observed",
+    runId: "run-toolobs",
+    tool: "read_file",
+    toolInputText: "read components/Button.tsx ui frontend styles",
+    observation: "probe",
+  });
+
+  const summary = summarizeRun(await readEvents(logFile));
+
+  const flagged = summary.possiblyMissedSkills.find((item) => item.name === "frontend-design");
+  assert.ok(flagged, "frontend-design should be flagged via tool_observed probe text");
+});
+
+test("scanSkillRoots falls back to heading and name line when frontmatter is missing", async () => {
+  const root = await mkdtemp(path.join(tmpdir(), "skill-audit-scan-fallback-"));
+  const skillDir = path.join(root, "skills", "no-frontmatter");
+  await mkdir(skillDir, { recursive: true });
+  await writeFile(
+    path.join(skillDir, "SKILL.md"),
+    "# No Frontmatter Skill\n\nThis skill has no YAML frontmatter.\n",
+  );
+
+  const skills = await scanSkillRoots([path.join(root, "skills")]);
+
+  assert.ok(skills.some((skill) => skill.name === "no-frontmatter-skill" || skill.name === "no-frontmatter"));
+});
+
+test("scanSkillRoots discovers skills from plugin.json skills array", async () => {
+  const root = await mkdtemp(path.join(tmpdir(), "skill-audit-scan-manifest-"));
+  const pluginDir = path.join(root, "my-plugin");
+  await mkdir(pluginDir, { recursive: true });
+  await writeFile(
+    path.join(pluginDir, "plugin.json"),
+    JSON.stringify({
+      skills: [
+        { name: "manifest-skill-a", description: "Manifest skill A" },
+        "manifest-skill-b",
+      ],
+    }),
+  );
+
+  const skills = await scanSkillRoots([pluginDir]);
+
+  assert.ok(skills.some((skill) => skill.name === "manifest-skill-a"));
+  assert.ok(skills.some((skill) => skill.name === "manifest-skill-b"));
+});
+
+test("scanSkillRoots discovers skills from package.json skills array", async () => {
+  const root = await mkdtemp(path.join(tmpdir(), "skill-audit-scan-pkg-"));
+  const pkgDir = path.join(root, "my-pkg");
+  await mkdir(pkgDir, { recursive: true });
+  await writeFile(
+    path.join(pkgDir, "package.json"),
+    JSON.stringify({
+      skills: [
+        { name: "pkg-skill-a", description: "Pkg skill A" },
+        "pkg-skill-b",
+      ],
+    }),
+  );
+
+  const skills = await scanSkillRoots([pkgDir]);
+
+  assert.ok(skills.some((skill) => skill.name === "pkg-skill-a"));
+  assert.ok(skills.some((skill) => skill.name === "pkg-skill-b"));
+});
+
+test("scanSkillRoots deduplicates manifest-declared and SKILL.md-discovered skills", async () => {
+  const root = await mkdtemp(path.join(tmpdir(), "skill-audit-scan-dedup-"));
+  const pluginDir = path.join(root, "my-plugin");
+  const skillDir = path.join(pluginDir, "manifest-with-file");
+  await mkdir(skillDir, { recursive: true });
+  await writeFile(
+    path.join(pluginDir, "plugin.json"),
+    JSON.stringify({
+      skills: [{ name: "manifest-with-file", description: "Manifest entry" }],
+    }),
+  );
+  await writeFile(
+    path.join(skillDir, "SKILL.md"),
+    "---\nname: manifest-with-file\ndescription: SKILL.md entry\n---\n# Manifest With File\n",
+  );
+
+  const skills = await scanSkillRoots([pluginDir]);
+
+  const matches = skills.filter((skill) => skill.name === "manifest-with-file");
+  assert.equal(matches.length, 1, "should not return duplicate skill for manifest + SKILL.md");
+  // 优先保留指向真实 SKILL.md 的记录（description 更完整）。
+  assert.equal(matches[0].description, "SKILL.md entry");
+});
+
+test("scanSkillRoots falls back to body name line when frontmatter is missing", async () => {
+  const root = await mkdtemp(path.join(tmpdir(), "skill-audit-scan-nameline-"));
+  const skillDir = path.join(root, "skills", "name-line-only");
+  await mkdir(skillDir, { recursive: true });
+  await writeFile(
+    path.join(skillDir, "SKILL.md"),
+    "name: name-line-only\n\nNo heading and no frontmatter here.\n",
+  );
+
+  const skills = await scanSkillRoots([path.join(root, "skills")]);
+
+  assert.ok(skills.some((skill) => skill.name === "name-line-only"));
+});
+
+test("renderChineseMarkdownReport marks uncorroborated self-reported skills", () => {
+  const markdown = renderChineseMarkdownReport({
+    runId: "run-corrob-report",
+    harness: "codex",
+    cwd: "D:/repo",
+    startedAt: "2026-07-09T07:00:00",
+    finishedAt: "2026-07-09T07:10:00",
+    discoveredSkills: [],
+    calledSkills: [
+      {
+        name: "brainstorming",
+        source: "superpowers",
+        evidence: "self_reported",
+        firstUsedAt: "2026-07-09T07:01:00",
+        reason: "self report",
+        corroborated: false,
+      },
+    ],
+    notCalledSkills: [],
+    hasTaskContext: true,
+  });
+
+  assert.match(markdown, /可疑自报告/);
+  assert.match(markdown, /任务上下文：已记录/);
+});
+
+test("renderChineseMarkdownReport does not mark non-self-reported skills without corroborated field", () => {
+  const markdown = renderChineseMarkdownReport({
+    runId: "run-no-corrob",
+    harness: "codex",
+    cwd: "D:/repo",
+    startedAt: "2026-07-09T07:00:00",
+    finishedAt: "2026-07-09T07:10:00",
+    discoveredSkills: [],
+    calledSkills: [
+      {
+        name: "brainstorming",
+        source: "superpowers",
+        evidence: "native_observed",
+        firstUsedAt: "2026-07-09T07:01:00",
+        reason: "hook observed",
+      },
+    ],
+    notCalledSkills: [],
+  });
+
+  // 摘要里不应出现可疑自报告计数。
+  assert.doesNotMatch(markdown, /可疑自报告 Skills：/);
+  // 已调用 Skills 表格行不应追加可疑自报告标记。
+  const tableRow = markdown.split("\n").find((line) => line.includes("brainstorming") && line.includes("|"));
+  assert.ok(tableRow, "should find a table row for brainstorming");
+  assert.doesNotMatch(tableRow, /可疑自报告/);
+});

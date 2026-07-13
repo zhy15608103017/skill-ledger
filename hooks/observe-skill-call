@@ -7,6 +7,7 @@ import { readActiveRun } from "../core/active-run.mjs";
 import { appendEvent } from "../core/audit-log.mjs";
 import { scanSkillRoots } from "../core/skill-scanner.mjs";
 import { collectSkillRoots } from "../core/skill-roots.mjs";
+import { isSkillTool, normalizeSkillName, normalizeToolName } from "../core/skill-name.mjs";
 
 const hookDir = dirname(fileURLToPath(import.meta.url));
 const pluginRoot = resolve(hookDir, "..");
@@ -28,7 +29,7 @@ try {
     await appendEvent(activeRun.logFile, {
       event: "skill_called",
       runId: activeRun.runId,
-      skill: skillName,
+      skill: normalizeSkillName(skillName),
       evidence: "native_observed",
       reason: `${displayHarnessName(harness)} Skill tool hook`,
     });
@@ -49,11 +50,15 @@ try {
   if (contextSkills.length) process.exit(0);
 
   if (tool) {
+    // 探针事件：记录工具名与关键输入文本，供漏用推断使用。
+    const toolInputText = collectText(payload).slice(0, 2000);
     await appendEvent(activeRun.logFile, {
       event: "tool_observed",
       runId: activeRun.runId,
       harness,
       tool,
+      toolName: normalizeToolName(tool),
+      toolInputText,
       hookEvent: stringValue(payload.hook_event_name || payload.hookEventName || payload.event),
       observation: "probe",
     });
@@ -126,30 +131,32 @@ function possibleSkillValues(payload) {
   });
 }
 
-function normalizeSkillName(value) {
-  if (!value) return "";
-  if (typeof value === "object" && value.name) return normalizeSkillName(value.name);
-  const text = stringValue(value).trim();
-  if (!text) return "";
-  return text.startsWith("/") ? text.slice(1) : text;
-}
-
-function isSkillTool(tool) {
-  return ["skill", "skilltool"].includes(String(tool || "").trim().toLowerCase());
-}
-
 async function observedContextSkills(payload, { cwd }) {
   const text = collectText(payload);
   if (!text) return [];
 
+  const normalizedText = normalizeForMatch(text);
   const skills = await scanSkillRoots(collectSkillRoots({ cwd, pluginRoot }));
   return skills.filter((skill) => {
+    const name = normalizeForMatch(skill.name);
+    if (!name) return false;
     return (
-      text.includes(`name: ${skill.name}`) ||
-      text.includes(`skills/${skill.name}/SKILL.md`) ||
-      text.includes(`skills\\${skill.name}\\SKILL.md`)
+      normalizedText.includes(`name: ${name}`) ||
+      normalizedText.includes(`name:${name}`) ||
+      normalizedText.includes(`skills/${name}/skill.md`) ||
+      normalizedText.includes(`skills\\${name}\\skill.md`)
     );
   });
+}
+
+// 把路径分隔符统一为正斜杠、整体小写，去掉多余空白，
+// 让上下文匹配不再受大小写和 Windows/Linux 路径差异影响。
+function normalizeForMatch(text) {
+  return String(text || "")
+    .replace(/\\/g, "/")
+    .replace(/\s+/g, " ")
+    .trim()
+    .toLowerCase();
 }
 
 function collectText(value, seen = new Set()) {

@@ -33,6 +33,8 @@ const VALUE_FLAGS = new Set([
   "plugin-spec",
   "scope",
   "limit",
+  "task-context",
+  "text",
 ]);
 const KNOWN_FLAGS = new Set([...BOOLEAN_FLAGS, ...VALUE_FLAGS]);
 
@@ -46,6 +48,7 @@ try {
   else if (command === "start") await startRun(args);
   else if (command === "call") await recordSkillCall(args);
   else if (command === "note") await recordNote(args);
+  else if (command === "task-context") await recordTaskContext(args);
   else if (command === "finish") await finishRun(args);
   else if (command === "report") await writeReport(args);
   else if (command === "status") await showStatus(args);
@@ -171,6 +174,7 @@ async function startRun(options) {
     runId,
     harness: options.harness || "unknown",
     cwd,
+    taskContext: options["task-context"] || "",
   });
 
   for (const skill of discovered) {
@@ -196,10 +200,12 @@ async function recordSkillCall(options) {
   const runId = required(options, "run-id");
   const skill = required(options, "skill");
   const cwd = path.resolve(options.cwd || process.cwd());
+  const { normalizeSkillName } = await import("../core/skill-name.mjs");
+  const normalized = normalizeSkillName(skill);
   const event = await appendEvent(logPath(runId, cwd), {
     event: "skill_called",
     runId,
-    skill,
+    skill: normalized,
     evidence: options.evidence || "self_reported",
     reason: options.reason || "",
   });
@@ -213,6 +219,17 @@ async function recordNote(options) {
     event: "audit_note",
     runId,
     note: required(options, "note"),
+  });
+  printJson({ recorded: true, event });
+}
+
+async function recordTaskContext(options) {
+  const runId = required(options, "run-id");
+  const cwd = path.resolve(options.cwd || process.cwd());
+  const event = await appendEvent(logPath(runId, cwd), {
+    event: "task_context",
+    runId,
+    text: required(options, "text"),
   });
   printJson({ recorded: true, event });
 }
@@ -441,9 +458,10 @@ function runCommand(commandName, commandArgs) {
 
 function usage(exitCode) {
   console.error(`Usage:
-  node scripts/skill-ledger.mjs start --run-id <id> --harness <name> --cwd <path> [--skills <skills-dir>] [--only-skills]
+  node scripts/skill-ledger.mjs start --run-id <id> --harness <name> --cwd <path> [--skills <skills-dir>] [--only-skills] [--task-context <text>]
   node scripts/skill-ledger.mjs call --run-id <id> --skill <name> [--evidence self_reported] [--reason <text>]
   node scripts/skill-ledger.mjs note --run-id <id> --note <text>
+  node scripts/skill-ledger.mjs task-context --run-id <id> --text <text>
   node scripts/skill-ledger.mjs finish --run-id <id> [--no-report] [--output <report.md>]
   node scripts/skill-ledger.mjs report --run-id <id> [--output <report.md>]
   node scripts/skill-ledger.mjs status [--harness <name>] [--cwd <path>]

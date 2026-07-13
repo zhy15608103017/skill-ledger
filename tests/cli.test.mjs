@@ -360,3 +360,92 @@ function run(args, cwd, options = {}) {
   assert.equal(result.status, 0, result.stderr || result.stdout);
   return result;
 }
+
+test("CLI start accepts --task-context and it appears in the audit log", async () => {
+  const cwd = await mkdtemp(path.join(tmpdir(), "skill-ledger-cli-taskctx-"));
+  const skillDir = path.join(cwd, "skills", "image-generation");
+  await mkdir(skillDir, { recursive: true });
+  await writeFile(
+    path.join(skillDir, "SKILL.md"),
+    "---\nname: image-generation\ndescription: Generate bitmap images and photos\n---\n# Image Generation\n",
+  );
+
+  run(
+    [
+      "start",
+      "--run-id",
+      "taskctx-run",
+      "--harness",
+      "codex",
+      "--cwd",
+      cwd,
+      "--skills",
+      path.join(cwd, "skills"),
+      "--only-skills",
+      "--task-context",
+      "用户要求生成一张产品图片",
+    ],
+    cwd,
+  );
+
+  const events = await readEvents(path.join(cwd, ".skill-ledger", "runs", "taskctx-run.jsonl"));
+  const startEvent = events.find((event) => event.event === "task_start");
+  assert.ok(startEvent, "task_start should be recorded");
+  assert.equal(startEvent.taskContext, "用户要求生成一张产品图片");
+});
+
+test("CLI task-context subcommand appends a task_context event", async () => {
+  const cwd = await mkdtemp(path.join(tmpdir(), "skill-ledger-cli-taskctx-cmd-"));
+  run(["start", "--run-id", "tc-cmd", "--harness", "codex", "--cwd", cwd, "--only-skills"], cwd);
+  run(["task-context", "--run-id", "tc-cmd", "--text", "later task context from user"], cwd);
+
+  const events = await readEvents(path.join(cwd, ".skill-ledger", "runs", "tc-cmd.jsonl"));
+  const ctxEvent = events.find((event) => event.event === "task_context");
+  assert.ok(ctxEvent, "task_context event should be recorded");
+  assert.equal(ctxEvent.text, "later task context from user");
+});
+
+test("CLI call normalizes skill names with prefixes and paths", async () => {
+  const cwd = await mkdtemp(path.join(tmpdir(), "skill-ledger-cli-normalize-"));
+  const skillDir = path.join(cwd, "skills", "brainstorming");
+  await mkdir(skillDir, { recursive: true });
+  await writeFile(
+    path.join(skillDir, "SKILL.md"),
+    "---\nname: brainstorming\ndescription: Use before creative work\n---\n# Brainstorming\n",
+  );
+
+  run(
+    [
+      "start",
+      "--run-id",
+      "norm-run",
+      "--harness",
+      "codex",
+      "--cwd",
+      cwd,
+      "--skills",
+      path.join(cwd, "skills"),
+      "--only-skills",
+    ],
+    cwd,
+  );
+  run(
+    [
+      "call",
+      "--run-id",
+      "norm-run",
+      "--skill",
+      "plugin:skills/Brainstorming/SKILL.md",
+      "--evidence",
+      "self_reported",
+      "--reason",
+      "prefixed path call",
+    ],
+    cwd,
+  );
+
+  const events = await readEvents(path.join(cwd, ".skill-ledger", "runs", "norm-run.jsonl"));
+  const call = events.find((event) => event.event === "skill_called");
+  assert.ok(call, "skill_called should be recorded");
+  assert.equal(call.skill, "Brainstorming");
+});

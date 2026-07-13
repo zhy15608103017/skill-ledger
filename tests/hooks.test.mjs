@@ -223,6 +223,82 @@ test("tool observation hook records Cursor and Copilot probe events for unknown 
   }
 });
 
+test("tool observation hook recognizes load-skill and invoke_skill as Skill tools", async () => {
+  const auditHome = await mkdtemp(path.join(tmpdir(), "skill-ledger-flex-skill-tool-"));
+  try {
+    const bootstrap = runHook({
+      auditHome,
+      env: { CLAUDE_PLUGIN_ROOT: pluginRoot, SKILL_LEDGER_HARNESS: "claude-code" },
+    });
+    const runId = bootstrap.hookSpecificOutput.additionalContext.match(/runId: (\S+)/)?.[1];
+    assert.ok(runId);
+
+    runObserveHook({
+      auditHome,
+      env: { CLAUDE_PLUGIN_ROOT: pluginRoot, SKILL_LEDGER_HARNESS: "claude-code" },
+      payload: {
+        hook_event_name: "PostToolUse",
+        tool_name: "load-skill",
+        tool_input: { name: "brainstorming" },
+      },
+    });
+
+    runObserveHook({
+      auditHome,
+      env: { CLAUDE_PLUGIN_ROOT: pluginRoot, SKILL_LEDGER_HARNESS: "claude-code" },
+      payload: {
+        hook_event_name: "PostToolUse",
+        tool_name: "invoke_skill",
+        tool_input: { name: "code-review-loop" },
+      },
+    });
+
+    const events = await readEvents(path.join(auditHome, "runs", `${runId}.jsonl`));
+    assert.ok(
+      events.some(
+        (event) => event.event === "skill_called" && event.skill === "brainstorming" && event.evidence === "native_observed",
+      ),
+    );
+    assert.ok(
+      events.some(
+        (event) => event.event === "skill_called" && event.skill === "code-review-loop" && event.evidence === "native_observed",
+      ),
+    );
+  } finally {
+    await rm(auditHome, { recursive: true, force: true });
+  }
+});
+
+test("tool observation hook records toolInputText for probe events", async () => {
+  const auditHome = await mkdtemp(path.join(tmpdir(), "skill-ledger-probe-text-"));
+  try {
+    const cursor = runHook({
+      auditHome,
+      env: { CURSOR_PLUGIN_ROOT: pluginRoot, SKILL_LEDGER_HARNESS: "cursor" },
+    });
+    const runId = cursor.additional_context.match(/runId: (\S+)/)?.[1];
+    assert.ok(runId);
+
+    runObserveHook({
+      auditHome,
+      env: { CURSOR_PLUGIN_ROOT: pluginRoot, SKILL_LEDGER_HARNESS: "cursor" },
+      payload: {
+        hook_event_name: "postToolUse",
+        tool_name: "read_file",
+        tool_input: { path: "src/ui/Button.tsx" },
+      },
+    });
+
+    const events = await readEvents(path.join(auditHome, "runs", `${runId}.jsonl`));
+    const probe = events.find((event) => event.event === "tool_observed");
+    assert.ok(probe, "should record a tool_observed probe event");
+    assert.ok(typeof probe.toolInputText === "string" && probe.toolInputText.length > 0, "toolInputText should be populated");
+    assert.ok(/Button/i.test(probe.toolInputText));
+  } finally {
+    await rm(auditHome, { recursive: true, force: true });
+  }
+});
+
 test("tool observation hook records Gemini context-loaded skills", async () => {
   const auditHome = await mkdtemp(path.join(tmpdir(), "skill-ledger-gemini-observe-"));
   try {
