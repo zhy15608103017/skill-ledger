@@ -1,5 +1,5 @@
 #!/usr/bin/env node
-import { mkdir, readFile, writeFile } from "node:fs/promises";
+import { mkdir, readFile, readdir, writeFile } from "node:fs/promises";
 import { randomUUID } from "node:crypto";
 import { homedir } from "node:os";
 import path from "node:path";
@@ -9,11 +9,32 @@ import { createInterface } from "node:readline/promises";
 import { stdin as input, stdout as output } from "node:process";
 
 import { appendEvent, readEvents, summarizeRun } from "../core/audit-log.mjs";
-import { writeActiveRun } from "../core/active-run.mjs";
+import { listActiveRuns, readActiveRun, writeActiveRun } from "../core/active-run.mjs";
 import { renderChineseMarkdownReport } from "../core/report-md.mjs";
 import { scanSkillRoots } from "../core/skill-scanner.mjs";
 import { collectSkillRoots } from "../core/skill-roots.mjs";
 import { formatLocalTimestampForFileName } from "../core/time-format.mjs";
+
+const BOOLEAN_FLAGS = new Set(["only-skills", "skills-only", "no-report", "skip-codex-add", "print-only"]);
+const VALUE_FLAGS = new Set([
+  "run-id",
+  "harness",
+  "cwd",
+  "skills",
+  "skill",
+  "evidence",
+  "reason",
+  "note",
+  "output",
+  "config",
+  "plugin",
+  "plugin-root",
+  "marketplace",
+  "plugin-spec",
+  "scope",
+  "limit",
+]);
+const KNOWN_FLAGS = new Set([...BOOLEAN_FLAGS, ...VALUE_FLAGS]);
 
 const command = process.argv[2];
 const args = parseArgs(process.argv.slice(3));
@@ -27,6 +48,8 @@ try {
   else if (command === "note") await recordNote(args);
   else if (command === "finish") await finishRun(args);
   else if (command === "report") await writeReport(args);
+  else if (command === "status") await showStatus(args);
+  else if (command === "runs") await listRuns(args);
   else if (command === "install-opencode") await installOpenCode(args);
   else if (command === "install-codex") installCodex(args);
   else if (command === "install-claude") installClaude(args);
@@ -217,6 +240,49 @@ async function writeReport(options) {
   printJson({ output });
 }
 
+async function showStatus(options) {
+  const cwd = path.resolve(options.cwd || process.cwd());
+  const home = auditHome(cwd);
+  const harness = options.harness || "unknown";
+  const activeRun = await readActiveRun({ auditHome: home, harness });
+  const allActive = await listActiveRuns(home);
+  printJson({ auditHome: home, cwd, harness, activeRun, allActive });
+}
+
+async function listRuns(options) {
+  const cwd = path.resolve(options.cwd || process.cwd());
+  const home = auditHome(cwd);
+  const runsDir = path.join(home, "runs");
+  let entries = [];
+  try {
+    entries = await readdir(runsDir, { withFileTypes: true });
+  } catch (error) {
+    if (error.code !== "ENOENT") throw error;
+  }
+
+  const runs = [];
+  for (const entry of entries.filter((item) => item.isFile() && item.name.endsWith(".jsonl"))) {
+    const logFile = path.join(runsDir, entry.name);
+    const summary = summarizeRun(await readEvents(logFile));
+    runs.push({
+      runId: summary.runId,
+      harness: summary.harness,
+      startedAt: summary.startedAt,
+      finishedAt: summary.finishedAt,
+      discoveredCount: summary.discoveredSkills.length,
+      calledCount: summary.calledSkills.length,
+      notCalledCount: summary.notCalledSkills.length,
+      possiblyMissedCount: summary.possiblyMissedSkills?.length || 0,
+      logFile,
+    });
+  }
+  runs.sort((a, b) => (b.startedAt || "").localeCompare(a.startedAt || ""));
+
+  const limit = Number(options.limit);
+  const limited = Number.isFinite(limit) && limit > 0 ? runs.slice(0, limit) : runs;
+  printJson({ auditHome: home, count: limited.length, total: runs.length, runs: limited });
+}
+
 async function writeReportFile({ runId, cwd, output }) {
   const events = await readEvents(logPath(runId, cwd));
   const summary = summarizeRun(events);
@@ -314,12 +380,50 @@ function parseArgs(argv) {
   for (let index = 0; index < argv.length; index += 1) {
     const item = argv[index];
     if (!item.startsWith("--")) continue;
-    const key = item.slice(2);
-    const value = argv[index + 1]?.startsWith("--") || argv[index + 1] === undefined ? "true" : argv[++index];
-    if (parsed[key]) parsed[key] = Array.isArray(parsed[key]) ? [...parsed[key], value] : [parsed[key], value];
-    else parsed[key] = value;
+    const rawKey = item.slice(2);
+
+    let key = rawKey;
+    let inlineValue;
+    const eqIndex = rawKey.indexOf("=");
+    if (eqIndex >= 0) {
+      key = rawKey.slice(0, eqIndex);
+      inlineValue = rawKey.slice(eqIndex + 1);
+    }
+
+    if (inlineValue !== undefined) {
+      setParsedValue(parsed, key, inlineValue);
+      continue;
+    }
+
+    if (BOOLEAN_FLAGS.has(key)) {
+      setParsedValue(parsed, key, "true");
+      continue;
+    }
+
+    const next = argv[index + 1];
+    if (next === undefined) {
+      setParsedValue(parsed, key, "true");
+    } else if (looksLikeFlag(next) && KNOWN_FLAGS.has(flagNameOf(next))) {
+      setParsedValue(parsed, key, "true");
+    } else {
+      setParsedValue(parsed, key, next);
+      index += 1;
+    }
   }
   return parsed;
+}
+
+function looksLikeFlag(token) {
+  return typeof token === "string" && token.startsWith("--");
+}
+
+function flagNameOf(token) {
+  return token.slice(2).split("=")[0];
+}
+
+function setParsedValue(parsed, key, value) {
+  if (parsed[key]) parsed[key] = Array.isArray(parsed[key]) ? [...parsed[key], value] : [parsed[key], value];
+  else parsed[key] = value;
 }
 
 function printJson(payload) {
@@ -342,8 +446,13 @@ function usage(exitCode) {
   node scripts/skill-ledger.mjs note --run-id <id> --note <text>
   node scripts/skill-ledger.mjs finish --run-id <id> [--no-report] [--output <report.md>]
   node scripts/skill-ledger.mjs report --run-id <id> [--output <report.md>]
+  node scripts/skill-ledger.mjs status [--harness <name>] [--cwd <path>]
+  node scripts/skill-ledger.mjs runs [--limit <n>] [--cwd <path>]
   node scripts/skill-ledger.mjs install-opencode [--config <opencode.json>] [--plugin <plugin-spec>]
   node scripts/skill-ledger.mjs install-codex [--marketplace <marketplace.json>] [--skip-codex-add]
-  node scripts/skill-ledger.mjs install-claude [--marketplace <marketplace.json>] [--plugin-spec <plugin@marketplace>] [--scope user|project|local] [--print-only]`);
+  node scripts/skill-ledger.mjs install-claude [--marketplace <marketplace.json>] [--plugin-spec <plugin@marketplace>] [--scope user|project|local] [--print-only]
+
+Options accept --key value, --key=value, or repeated --key value for list flags.
+Values that start with "--" are kept as long as they are not a recognized flag name.`);
   process.exit(exitCode);
 }

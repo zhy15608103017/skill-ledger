@@ -272,3 +272,97 @@ test("renderChineseMarkdownReport formats report timestamps as local display tim
   assert.match(markdown, /2026-07-06 08:01:00/);
   assert.doesNotMatch(markdown, /2026-07-06T08:/);
 });
+
+test("summarizeRun flags possibly missed skills via description keyword overlap", async () => {
+  const root = await mkdtemp(path.join(tmpdir(), "skill-audit-miss-"));
+  const logFile = path.join(root, "runs", "run-miss.jsonl");
+
+  await appendEvent(logFile, { event: "task_start", runId: "run-miss", harness: "codex", cwd: root });
+  await appendEvent(logFile, {
+    event: "skill_discovered",
+    skill: {
+      name: "code-review-loop",
+      description: "Run code review before finishing",
+      source: "superpowers",
+    },
+  });
+  await appendEvent(logFile, {
+    event: "skill_discovered",
+    skill: {
+      name: "verification-before-completion",
+      description: "verification before completion requires running commands",
+      source: "superpowers",
+    },
+  });
+  await appendEvent(logFile, {
+    event: "skill_discovered",
+    skill: {
+      name: "image-generation",
+      description: "Generate bitmap images and photos",
+      source: "tools",
+    },
+  });
+  await appendEvent(logFile, {
+    event: "skill_called",
+    skill: "code-review-loop",
+    evidence: "self_reported",
+    reason: "perform code review and verification before completion",
+  });
+
+  const summary = summarizeRun(await readEvents(logFile));
+
+  assert.ok(Array.isArray(summary.possiblyMissedSkills));
+  const flagged = summary.possiblyMissedSkills.find((skill) => skill.name === "verification-before-completion");
+  assert.ok(flagged, "verification-before-completion should be flagged as possibly missed");
+  assert.match(flagged.reason, /verification/);
+  assert.ok(["较高", "中等"].includes(flagged.confidence));
+  assert.ok(
+    !summary.possiblyMissedSkills.some((skill) => skill.name === "image-generation"),
+    "image-generation has no context overlap and must not be flagged",
+  );
+  assert.ok(
+    !summary.possiblyMissedSkills.some((skill) => skill.name === "code-review-loop"),
+    "already called skills must never appear in possibly missed",
+  );
+});
+
+test("summarizeRun omits possiblyMissedSkills when there is no task context", async () => {
+  const root = await mkdtemp(path.join(tmpdir(), "skill-audit-miss-empty-"));
+  const logFile = path.join(root, "runs", "run-miss-empty.jsonl");
+
+  await appendEvent(logFile, { event: "task_start", runId: "run-miss-empty", harness: "codex", cwd: root });
+  await appendEvent(logFile, {
+    event: "skill_discovered",
+    skill: { name: "brainstorming", description: "Use before creative work", source: "superpowers" },
+  });
+
+  const summary = summarizeRun(await readEvents(logFile));
+
+  assert.deepEqual(summary.possiblyMissedSkills, []);
+});
+
+test("renderChineseMarkdownReport includes possibly missed skills section when present", () => {
+  const markdown = renderChineseMarkdownReport({
+    runId: "run-miss-report",
+    harness: "codex",
+    cwd: "D:/repo",
+    startedAt: "2026-07-09T07:00:00",
+    finishedAt: "2026-07-09T07:10:00",
+    discoveredSkills: [],
+    calledSkills: [],
+    notCalledSkills: [],
+    possiblyMissedSkills: [
+      {
+        name: "verification-before-completion",
+        reason: "任务上下文命中描述关键词：verification、completion",
+        confidence: "较高",
+      },
+    ],
+    notes: [],
+  });
+
+  assert.match(markdown, /## 可能漏用的 Skills/);
+  assert.match(markdown, /启发式匹配，仅供参考/);
+  assert.match(markdown, /verification-before-completion/);
+  assert.match(markdown, /\| 较高 \|/);
+});

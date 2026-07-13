@@ -188,7 +188,7 @@ test("CLI finish writes the default report unless disabled", async () => {
   const output = path.resolve(reportOutput);
   const markdown = await readFile(output, "utf8");
 
-  assert.match(path.basename(output), /^\d{4}-\d{2}-\d{2} \d{2} \d{2} \d{2}\.md$/);
+  assert.match(path.basename(output), /^\d{4}-\d{2}-\d{2} \d{2}-\d{2}-\d{2}\.md$/);
   assert.notEqual(path.basename(output), "finish-report.md");
   assert.match(markdown, /finish-report/);
   assert.match(markdown, /auto report/);
@@ -276,6 +276,71 @@ test("CLI quick install menu uses the published package name for OpenCode", asyn
 
   const config = JSON.parse(await readFile(path.join(configDir, "opencode.json"), "utf8"));
   assert.deepEqual(config.plugin, ["@example/skill-ledger"]);
+});
+
+test("CLI call keeps reason values that start with -- and supports --key=value", async () => {
+  const cwd = await mkdtemp(path.join(tmpdir(), "skill-ledger-cli-dash-"));
+  const skillDir = path.join(cwd, "skills", "brainstorming");
+  await mkdir(skillDir, { recursive: true });
+  await writeFile(
+    path.join(skillDir, "SKILL.md"),
+    "---\nname: brainstorming\ndescription: Use before creative work\n---\n# Brainstorming\n",
+  );
+
+  run(
+    ["start", "--run-id", "dash-run", "--harness", "codex", "--cwd", cwd, "--skills", path.join(cwd, "skills"), "--only-skills"],
+    cwd,
+  );
+  run(
+    ["call", "--run-id", "dash-run", "--skill", "brainstorming", "--evidence", "self_reported", "--reason", "--dash-value"],
+    cwd,
+  );
+
+  const dashEvents = await readEvents(path.join(cwd, ".skill-ledger", "runs", "dash-run.jsonl"));
+  const dashCall = dashEvents.find((event) => event.event === "skill_called");
+  assert.equal(dashCall.reason, "--dash-value");
+
+  run(
+    ["call", "--run-id=dash-run", "--skill", "brainstorming", "--evidence", "self_reported", "--reason=inline --value"],
+    cwd,
+  );
+
+  const inlineEvents = await readEvents(path.join(cwd, ".skill-ledger", "runs", "dash-run.jsonl"));
+  const inlineCall = inlineEvents.filter((event) => event.event === "skill_called").at(-1);
+  assert.equal(inlineCall.reason, "inline --value");
+});
+
+test("CLI status reports the active run and runs lists recorded runs", async () => {
+  const cwd = await mkdtemp(path.join(tmpdir(), "skill-ledger-cli-status-"));
+  const skillDir = path.join(cwd, "skills", "brainstorming");
+  await mkdir(skillDir, { recursive: true });
+  await writeFile(
+    path.join(skillDir, "SKILL.md"),
+    "---\nname: brainstorming\ndescription: Use before creative work\n---\n# Brainstorming\n",
+  );
+
+  run(
+    ["start", "--run-id", "status-run", "--harness", "codex", "--cwd", cwd, "--skills", path.join(cwd, "skills"), "--only-skills"],
+    cwd,
+  );
+
+  const statusResult = run(["status", "--harness", "codex", "--cwd", cwd], cwd);
+  const status = JSON.parse(statusResult.stdout);
+  assert.equal(status.activeRun.runId, "status-run");
+  assert.ok(status.allActive.some((entry) => entry.runId === "status-run"));
+
+  run(
+    ["call", "--run-id", "status-run", "--skill", "brainstorming", "--evidence", "self_reported", "--reason", "status check"],
+    cwd,
+  );
+
+  const runsResult = run(["runs", "--cwd", cwd], cwd);
+  const runs = JSON.parse(runsResult.stdout);
+  assert.equal(runs.count, 1);
+  assert.equal(runs.total, 1);
+  assert.equal(runs.runs[0].runId, "status-run");
+  assert.equal(runs.runs[0].calledCount, 1);
+  assert.equal(runs.runs[0].discoveredCount, 1);
 });
 
 function run(args, cwd, options = {}) {

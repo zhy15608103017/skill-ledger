@@ -39,7 +39,14 @@ export function renderChineseMarkdownReport(summary) {
   ];
 
   if (summary.possiblyMissedSkills?.length) {
-    lines.push("", "## 可能漏用的 Skills", "", ...possibleMissTable(summary.possiblyMissedSkills));
+    lines.push(
+      "",
+      "## 可能漏用的 Skills",
+      "",
+      "> 该列表基于 Skill 描述关键词与任务上下文的启发式匹配，仅供参考，不代表确证漏用。",
+      "",
+      ...possibleMissTable(summary.possiblyMissedSkills),
+    );
   }
 
   if (summary.notes?.length) {

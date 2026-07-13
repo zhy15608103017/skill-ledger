@@ -1,4 +1,4 @@
-import { mkdir, readFile, writeFile } from "node:fs/promises";
+import { mkdir, readFile, readdir, writeFile } from "node:fs/promises";
 import path from "node:path";
 
 export async function writeActiveRun({ auditHome, harness, runId, logFile, cwd }) {
@@ -28,6 +28,34 @@ export async function readActiveRun({ auditHome, harness }) {
     if (error instanceof SyntaxError) return null;
     throw error;
   }
+}
+
+export async function listActiveRuns(auditHome) {
+  const dir = path.join(auditHome, "active");
+  let entries = [];
+  try {
+    entries = await readdir(dir, { withFileTypes: true });
+  } catch (error) {
+    if (error.code !== "ENOENT") throw error;
+    return [];
+  }
+
+  const runs = [];
+  for (const entry of entries.filter((item) => item.isFile() && item.name.endsWith(".json"))) {
+    try {
+      const data = JSON.parse(await readFile(path.join(dir, entry.name), "utf8"));
+      runs.push({
+        harness: data.harness || entry.name.replace(/\.json$/, ""),
+        runId: data.runId || "",
+        logFile: data.logFile || "",
+        cwd: data.cwd || "",
+        updatedAt: data.updatedAt || "",
+      });
+    } catch {
+      // Skip corrupt active-run files.
+    }
+  }
+  return runs;
 }
 
 function activeRunPath(auditHome, harness) {

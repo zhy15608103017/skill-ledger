@@ -10,7 +10,7 @@ export function formatLocalTimestamp(input) {
 }
 
 export function formatLocalTimestampForFileName(input) {
-  return formatLocalTimestamp(input).replace(/:/g, " ");
+  return formatLocalTimestamp(input).replace(/:/g, "-");
 }
 
 function pad2(value) {
