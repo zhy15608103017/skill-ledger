@@ -1,0 +1,38 @@
+{
+  "version": 1,
+  "updatedAt": "2026-07-14T01:26:07.917Z",
+  "stats": {
+    "runsAnalyzed": 19,
+    "skillsSeen": 76
+  },
+  "learnedStopwords": [
+    "use",
+    "when"
+  ],
+  "learnedSynonyms": [],
+  "feedback": {
+    "confirmed": [],
+    "rejected": [
+      {
+        "skillName": "project-artifact",
+        "reason": "误报：命中 default/questions 等泛词",
+        "time": "2026-07-14T01:25:54.219Z"
+      },
+      {
+        "skillName": "codex-with-cc",
+        "reason": "误报：命中 default 泛词",
+        "time": "2026-07-14T01:26:07.617Z"
+      },
+      {
+        "skillName": "mcp-integration",
+        "reason": "误报：命中 add/model 泛词",
+        "time": "2026-07-14T01:26:07.915Z"
+      }
+    ]
+  },
+  "thresholds": {
+    "minMissScore": 1.2,
+    "highMissScore": 3,
+    "maxDfRatio": 0.2
+  }
+}

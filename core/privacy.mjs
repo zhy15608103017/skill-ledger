@@ -38,9 +38,9 @@ export function redactSensitiveText(value) {
   return String(value || "")
     .replace(/\b(authorization|proxy-authorization)\s*[:=]\s*[^\r\n]+/gi, "$1=[REDACTED]")
     .replace(/\b(bearer|basic)\s+[a-z0-9._~+\/-]+=*/gi, "$1 [REDACTED]")
-    .replace(/\b(api[_-]?key|access[_-]?token|auth[_-]?token|client[_-]?secret|password|passwd|secret)\s*[:=]\s*(["']?)[^\s,"';]+\2/gi, "$1=[REDACTED]")
-    .replace(/\b(sk-[a-z0-9_-]{16,}|gh[pousr]_[a-z0-9_]{16,}|github_pat_[a-z0-9_]{16,})\b/gi, "[REDACTED_TOKEN]")
-    .replace(/(https?:\/\/)([^\s/@:]+):([^\s/@]+)@/gi, "$1[REDACTED]@")
+    .replace(/\b(api[_-]?key|access[_-]?token|auth[_-]?token|client[_-]?secret|password\w*|passwd\w*|secret|token|private[_-]?key)\s*[:=]\s*(["']?)[^\s,"';]+\2/gi, "$1=[REDACTED]")
+    .replace(/\b(sk-[a-z0-9_-]{16,}|gh[pousr]_[a-z0-9_]{16,}|github_pat_[a-z0-9_]{16,}|akia[a-z0-9]{16,})\b/gi, "[REDACTED_TOKEN]")
+    .replace(/(\w+):\/\/([^\s/@:]*)?:([^\s/@]+)@/gi, "$1://[REDACTED]@")
     .replace(/-----BEGIN [A-Z ]*PRIVATE KEY-----[\s\S]*?-----END [A-Z ]*PRIVATE KEY-----/g, "[REDACTED_PRIVATE_KEY]");
 }
 

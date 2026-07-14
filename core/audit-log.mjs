@@ -2,6 +2,7 @@ import { mkdir, readFile, writeFile } from "node:fs/promises";
 import path from "node:path";
 
 import { canonicalSkillName, skillNameKey } from "./skill-name.mjs";
+import { getEffectiveStopwords, getEffectiveSynonyms, getEffectiveThresholds } from "./learning.mjs";
 
 export async function appendEvent(logFile, event) {
   await mkdir(path.dirname(logFile), { recursive: true });
@@ -26,7 +27,7 @@ export async function readEvents(logFile) {
   }
 }
 
-export function summarizeRun(events) {
+export function summarizeRun(events, { learnedModel = null } = {}) {
   // discoveredByName：按归一化后的小写 key 存储，值为原始 skill 对象（保留展示用名字）。
   const discoveredByKey = new Map();
   const discoveredByDisplay = new Map();
@@ -125,6 +126,7 @@ export function summarizeRun(events) {
     notes,
     taskContext: taskContextParts.join("\n"),
     toolObservedText: toolObservedTexts.join("\n"),
+    learnedModel,
   });
 
   return {
@@ -168,6 +170,23 @@ const STOPWORDS = new Set([
   "third", "per", "form", "file", "files", "local", "output", "docs", "doc", "spec", "feature",
   "features", "comment", "comments", "feedback", "trigger", "triggers", "dev", "behavior",
   "functionality", "when", "while",
+  // 高频通用技术名词（在大量 skill 描述中出现，缺乏判别力）
+  "default", "model", "models", "add", "adds", "added", "adding", "update", "updates", "updated",
+  "updating", "create", "creates", "created", "creating", "generate", "generates", "generated",
+  "generating", "build", "builds", "building", "built", "config", "configuration", "configure",
+  "configured", "path", "paths", "name", "names", "value", "values", "type", "types", "data",
+  "info", "information", "details", "detail", "options", "option", "settings", "setting",
+  "command", "commands", "json", "yaml", "text", "string", "number", "list", "item", "items",
+  "entry", "entries", "field", "fields", "section", "sections", "project", "projects", "code",
+  "codes", "source", "sources", "tool", "tools", "plugin", "plugins", "extension", "extensions",
+  "package", "packages", "module", "modules", "repository", "repo", "directory", "directories",
+  "folder", "folders", "application", "apps", "app", "service", "services", "server", "servers",
+  "client", "clients", "api", "endpoint", "endpoints", "method", "methods", "function", "functions",
+  "class", "classes", "object", "objects", "property", "properties", "action", "actions",
+  // 中文高频通用技术词
+  "配置", "创建", "生成", "更新", "添加", "修改", "删除", "管理", "处理", "操作", "数据", "信息",
+  "选项", "设置", "命令", "路径", "目录", "文件", "项目", "代码", "工具", "插件", "模块", "服务",
+  "应用", "接口", "方法", "属性", "参数", "默认", "修复", "解决", "实现", "编写", "检查", "验证",
   // 中文虚词（由 Intl.Segmenter 分出的单字/双字虚词）
   "并", "的", "了", "在", "是", "我", "你", "他", "她", "它", "们", "这", "那", "和", "与", "或",
   "也", "都", "就", "还", "又", "把", "被", "给", "向", "从", "到", "对", "于", "以", "为", "而",
@@ -209,21 +228,22 @@ for (const group of SYNONYM_GROUPS) {
   }
 }
 
-function detectPossiblyMissedSkills({ discoveredSkills, calledSkills, notes, taskContext = "", toolObservedText = "" }) {
+function detectPossiblyMissedSkills({ discoveredSkills, calledSkills, notes, taskContext = "", toolObservedText = "", learnedModel = null }) {
   const contextText = buildTaskContextText(calledSkills, notes, taskContext, toolObservedText);
   if (!contextText.trim()) return [];
-  const contextKeywords = new Set(extractKeywords(contextText));
+  const contextKeywords = new Set(extractKeywords(contextText, learnedModel));
 
   const total = discoveredSkills.length;
-  // 自适应：skill 数量越多，DF 上限越宽松；同时基础阈值随规模线性缩放。
-  const maxDocumentFrequency = Math.max(2, Math.ceil(total * 0.3));
+  const effectiveThresholds = getEffectiveThresholds(MIN_MISS_SCORE, HIGH_MISS_SCORE, 0.3, learnedModel);
+  const maxDfRatio = effectiveThresholds.maxDfRatio;
+  const maxDocumentFrequency = Math.max(2, Math.ceil(total * maxDfRatio));
   const scale = total > 10 ? Math.log10(total) : 1;
-  const minMissScore = MIN_MISS_SCORE * scale;
-  const highMissScore = HIGH_MISS_SCORE * scale;
+  const minMissScore = effectiveThresholds.minMissScore * scale;
+  const highMissScore = effectiveThresholds.highMissScore * scale;
 
   const documentFrequency = new Map();
   for (const skill of discoveredSkills) {
-    for (const keyword of new Set(extractKeywords(`${skill.name} ${skill.description}`))) {
+    for (const keyword of new Set(extractKeywords(`${skill.name} ${skill.description}`, learnedModel))) {
       documentFrequency.set(keyword, (documentFrequency.get(keyword) || 0) + 1);
     }
   }
@@ -237,7 +257,7 @@ function detectPossiblyMissedSkills({ discoveredSkills, calledSkills, notes, tas
   const candidates = [];
   for (const skill of discoveredSkills) {
     if (calledKeys.has(skillNameKey(skill.name))) continue;
-    const keywords = [...new Set(extractKeywords(`${skill.name} ${skill.description}`))].filter(isDiscriminative);
+    const keywords = [...new Set(extractKeywords(`${skill.name} ${skill.description}`, learnedModel))].filter(isDiscriminative);
     if (keywords.length < 1) continue;
     const matched = keywords.filter((keyword) => contextKeywords.has(keyword));
     // 至少命中 2 个判别性关键词，或命中 1 个且该关键词 DF=1（独占词）时才标记，
@@ -290,9 +310,16 @@ function getSegmenter() {
   return segmenter;
 }
 
-function extractKeywords(text) {
+function extractKeywords(text, learnedModel = null) {
   const source = String(text || "").toLowerCase();
   if (!source) return [];
+
+  const effectiveStopwords = learnedModel
+    ? getEffectiveStopwords(STOPWORDS, learnedModel)
+    : STOPWORDS;
+  const effectiveSynonymMap = learnedModel
+    ? buildEffectiveSynonymMap(learnedModel)
+    : SYNONYM_TO_CANONICAL;
 
   const tokens = new Set();
 
@@ -302,9 +329,9 @@ function extractKeywords(text) {
   for (const token of source.split(/[^a-z0-9]+/i)) {
     const trimmed = token.trim();
     if (!trimmed) continue;
-    if (STOPWORDS.has(trimmed)) continue;
-    const canonical = canonicalizeWord(trimmed);
-    if (canonical.length >= 2 && !STOPWORDS.has(canonical)) {
+    if (effectiveStopwords.has(trimmed)) continue;
+    const canonical = canonicalizeWordWith(trimmed, effectiveSynonymMap);
+    if (canonical.length >= 2 && !effectiveStopwords.has(canonical)) {
       tokens.add(canonical);
     }
   }
@@ -318,25 +345,51 @@ function extractKeywords(text) {
       if (word.length < 2) continue;
       // 只对包含 CJK 字符的 segment 走中文路径；纯英文已被上面处理。
       if (!/[\u4e00-\u9fff]/.test(word)) continue;
-      if (STOPWORDS.has(word)) continue;
-      tokens.add(canonicalizeWord(word));
+      if (effectiveStopwords.has(word)) continue;
+      tokens.add(canonicalizeWordWith(word, effectiveSynonymMap));
     }
   } else {
     // 回退：CJK 字符 bigram。
     const cjkChars = Array.from(source).filter((char) => /[\u4e00-\u9fff]/.test(char));
     for (let index = 0; index < cjkChars.length - 1; index += 1) {
       const bigram = cjkChars[index] + cjkChars[index + 1];
-      if (!STOPWORDS.has(bigram)) tokens.add(canonicalizeWord(bigram));
+      if (!effectiveStopwords.has(bigram)) tokens.add(canonicalizeWordWith(bigram, effectiveSynonymMap));
     }
   }
 
   return [...tokens];
 }
 
+let effectiveSynonymMapCache = null;
+let effectiveSynonymModelRef = null;
+
+function buildEffectiveSynonymMap(learnedModel) {
+  if (effectiveSynonymModelRef === learnedModel && effectiveSynonymMapCache) {
+    return effectiveSynonymMapCache;
+  }
+  const effectiveGroups = getEffectiveSynonyms(SYNONYM_GROUPS, learnedModel);
+  const map = new Map();
+  for (const group of effectiveGroups) {
+    const canonical = group[0];
+    for (const word of group) {
+      const key = word.toLowerCase();
+      if (!map.has(key)) map.set(key, canonical);
+    }
+  }
+  effectiveSynonymMapCache = map;
+  effectiveSynonymModelRef = learnedModel;
+  return map;
+}
+
 // 把同义词归并到规范形式，让"界面"和"ui"命中同一个关键词。
 function canonicalizeWord(word) {
   const lower = word.toLowerCase();
   return SYNONYM_TO_CANONICAL.get(lower) || lower;
+}
+
+function canonicalizeWordWith(word, synonymMap) {
+  const lower = word.toLowerCase();
+  return synonymMap.get(lower) || lower;
 }
 
 function evidenceRank(evidence) {

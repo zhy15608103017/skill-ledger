@@ -15,8 +15,9 @@ import { privacySettings, sanitizeTaskContext } from "../core/privacy.mjs";
 import { pruneAuditData } from "../core/retention.mjs";
 import { scanSkillRoots } from "../core/skill-scanner.mjs";
 import { collectSkillRoots } from "../core/skill-roots.mjs";
+import { defaultLearnedModelPath, learnFromRuns, loadLearnedModel, recordFeedback, saveLearnedModel } from "../core/learning.mjs";
 
-const BOOLEAN_FLAGS = new Set(["only-skills", "skills-only", "no-report", "full", "task-context-stdin", "skip-codex-add", "print-only"]);
+const BOOLEAN_FLAGS = new Set(["only-skills", "skills-only", "no-report", "full", "task-context-stdin", "skip-codex-add", "print-only", "merge"]);
 const VALUE_FLAGS = new Set([
   "run-id",
   "harness",
@@ -42,6 +43,8 @@ const VALUE_FLAGS = new Set([
   "startup-skill",
   "startup-evidence",
   "days",
+  "model-path",
+  "verdict",
 ]);
 const KNOWN_FLAGS = new Set([...BOOLEAN_FLAGS, ...VALUE_FLAGS]);
 
@@ -64,6 +67,8 @@ try {
   else if (command === "install-opencode") await installOpenCode(args);
   else if (command === "install-codex") installCodex(args);
   else if (command === "install-claude") installClaude(args);
+  else if (command === "learn") await learnFromHistory(args);
+  else if (command === "feedback") await recordUserFeedback(args);
   else usage(1);
 } catch (error) {
   console.error(error.stack || error.message);
@@ -347,7 +352,8 @@ async function listRuns(options) {
 async function writeReportFile({ runId, cwd, output, includeInventory = false }) {
   const events = await readEvents(logPath(runId, cwd));
   if (!events.length) throw new Error(`Unknown audit run: ${runId}`);
-  const summary = summarizeRun(events);
+  const learnedModel = await loadLearnedModel(defaultLearnedModelPath(cwd)).catch(() => null);
+  const summary = summarizeRun(events, { learnedModel });
   const markdown = renderChineseMarkdownReport(summary, { includeInventory });
   const defaultOutput = path.join(auditHome(cwd), "reports", `${runId}.md`);
   const reportOutput = path.resolve(cwd, output || defaultOutput);
@@ -524,6 +530,46 @@ function runCommand(commandName, commandArgs) {
   if (result.status !== 0) process.exit(result.status || 1);
 }
 
+async function learnFromHistory(options) {
+  const cwd = path.resolve(options.cwd || process.cwd());
+  const modelPath = options["model-path"] || defaultLearnedModelPath(cwd);
+  const existing = await loadLearnedModel(modelPath).catch(() => null);
+  const merge = options.merge === "true" && existing;
+  const baseModel = merge ? existing : null;
+
+  const result = await learnFromRuns(auditHome(cwd), { existingModel: baseModel });
+  const saved = await saveLearnedModel(modelPath, result.model);
+  printJson({
+    modelPath,
+    stats: result.stats,
+    learnedStopwords: saved.learnedStopwords,
+    learnedSynonyms: saved.learnedSynonyms,
+    thresholds: saved.thresholds,
+    feedbackCount: { confirmed: saved.feedback.confirmed.length, rejected: saved.feedback.rejected.length },
+  });
+}
+
+async function recordUserFeedback(options) {
+  const cwd = path.resolve(options.cwd || process.cwd());
+  const modelPath = options["model-path"] || defaultLearnedModelPath(cwd);
+  const skill = required(options, "skill");
+  const verdict = required(options, "verdict");
+  if (!["confirmed", "rejected"].includes(verdict)) {
+    throw new Error("--verdict must be 'confirmed' or 'rejected'");
+  }
+
+  const model = await loadLearnedModel(modelPath);
+  recordFeedback(model, { skillName: skill, verdict, reason: options.reason || "" });
+  await saveLearnedModel(modelPath, model);
+  printJson({
+    modelPath,
+    skill,
+    verdict,
+    feedbackCount: { confirmed: model.feedback.confirmed.length, rejected: model.feedback.rejected.length },
+    thresholds: model.thresholds,
+  });
+}
+
 function usage(exitCode) {
   console.error(`Usage:
   node scripts/skill-ledger.mjs start --run-id <id> --harness <name> --cwd <path> [--session-id <id>] [--skills <skills-dir>] [--only-skills] [--task-context <text> | --task-context-stdin] [--privacy strict|balanced|diagnostic] [--retention-days <n>]
@@ -535,6 +581,8 @@ function usage(exitCode) {
   node scripts/skill-ledger.mjs status [--harness <name>] [--session-id <id>] [--cwd <path>]
   node scripts/skill-ledger.mjs runs [--limit <n>] [--cwd <path>]
   node scripts/skill-ledger.mjs prune --days <n> [--cwd <path>]
+  node scripts/skill-ledger.mjs learn [--cwd <path>] [--model-path <path>] [--merge]
+  node scripts/skill-ledger.mjs feedback --skill <name> --verdict confirmed|rejected [--reason <text>] [--cwd <path>] [--model-path <path>]
   node scripts/skill-ledger.mjs install-opencode [--config <opencode.json>] [--plugin <plugin-spec>]
   node scripts/skill-ledger.mjs install-codex [--marketplace <marketplace.json>] [--skip-codex-add]
   node scripts/skill-ledger.mjs install-claude [--marketplace <marketplace.json>] [--plugin-spec <plugin@marketplace>] [--scope user|project|local] [--print-only]

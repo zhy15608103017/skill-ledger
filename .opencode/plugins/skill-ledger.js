@@ -6,9 +6,11 @@ import { fileURLToPath } from "node:url";
 import { clearActiveRun, writeActiveRun } from "../../core/active-run.mjs";
 import { appendEvent, readEvents, summarizeRun } from "../../core/audit-log.mjs";
 import { buildBootstrapText, readStartupSkillText } from "../../core/bootstrap.mjs";
+import { defaultLearnedModelPath, loadLearnedModel } from "../../core/learning.mjs";
 import { privacySettings, sanitizeTaskContext } from "../../core/privacy.mjs";
 import { renderChineseMarkdownReport } from "../../core/report-md.mjs";
 import { pruneAuditData } from "../../core/retention.mjs";
+import { normalizeSkillName } from "../../core/skill-name.mjs";
 import { scanSkillRoots } from "../../core/skill-scanner.mjs";
 import { collectSkillRoots } from "../../core/skill-roots.mjs";
 
@@ -123,7 +125,7 @@ export const SkillLedgerPlugin = async ({ directory } = {}) => {
       runs.delete(key);
       if (sessionId) endedSessionIds.add(sessionId);
       try {
-        await finishAuditRun({ run, auditHome });
+        await finishAuditRun({ run, auditHome, workspaceDir });
       } catch (error) {
         runs.set(key, run);
         if (sessionId) endedSessionIds.delete(sessionId);
@@ -169,12 +171,14 @@ async function recordLateTaskContext(run, taskContext, privacyMode) {
   run.contextRecorded = true;
 }
 
-async function finishAuditRun({ run, auditHome }) {
+async function finishAuditRun({ run, auditHome, workspaceDir }) {
   const events = await readEvents(run.logFile);
   if (!events.some((event) => event.event === "task_end")) {
     await appendEvent(run.logFile, { event: "task_end", runId: run.runId });
   }
-  const summary = summarizeRun(await readEvents(run.logFile));
+  const modelPath = defaultLearnedModelPath(workspaceDir || run.cwd || process.cwd());
+  const learnedModel = await loadLearnedModel(modelPath).catch(() => null);
+  const summary = summarizeRun(await readEvents(run.logFile), { learnedModel });
   const reportPath = path.join(auditHome, "reports", `${run.runId}.md`);
   await mkdir(path.dirname(reportPath), { recursive: true });
   await writeFile(reportPath, renderChineseMarkdownReport(summary), "utf8");
@@ -267,13 +271,6 @@ function parsePayload(payload) {
   } catch {
     return payload;
   }
-}
-
-function normalizeSkillName(value) {
-  if (!value) return "";
-  if (typeof value === "object" && value.name) return normalizeSkillName(value.name);
-  if (typeof value !== "string") return "";
-  return value.trim();
 }
 
 async function getStartupSkillText() {
