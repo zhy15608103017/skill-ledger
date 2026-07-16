@@ -26,6 +26,7 @@ test("platform manifests expose Skill Ledger skills and startup bootstrap", asyn
   const codex = JSON.parse(await readFile(".codex-plugin/plugin.json", "utf8"));
   const kimi = JSON.parse(await readFile(".kimi-plugin/plugin.json", "utf8"));
   const gemini = JSON.parse(await readFile("gemini-extension.json", "utf8"));
+  const geminiContext = await readFile("GEMINI.md", "utf8");
   const opencodePlugin = await readFile(".opencode/plugins/skill-ledger.js", "utf8");
   const piExtension = await readFile(".pi/extensions/skill-ledger.ts", "utf8");
   const pkg = JSON.parse(await readFile("package.json", "utf8"));
@@ -42,6 +43,8 @@ test("platform manifests expose Skill Ledger skills and startup bootstrap", asyn
   assert.equal(codex.skills, "./skills/");
   assert.equal(kimi.sessionStart.skill, "using-skill-audit");
   assert.equal(gemini.contextFileName, "GEMINI.md");
+  assert.match(geminiContext, /using-skill-audit/);
+  assert.doesNotMatch(geminiContext, /generate-skill-audit-report/);
   assert.match(opencodePlugin, /collectSkillRoots/);
   assert.match(piExtension, /context_observed/);
   assert.match(piExtension, /collectSkillRoots/);

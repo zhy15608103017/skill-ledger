@@ -1,4 +1,0 @@
-interface:
-  display_name: "Generate Skill Ledger Report"
-  short_description: "Write a Chinese Markdown report of skill usage"
-  default_prompt: "Generate the skill audit report."

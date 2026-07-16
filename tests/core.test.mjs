@@ -146,21 +146,21 @@ test("audit summary matches plugin-prefixed skill calls to discovered bare skill
   await appendEvent(logFile, {
     event: "skill_discovered",
     skill: {
-      name: "generate-skill-audit-report",
+      name: "report-export",
       description: "Write reports",
       source: "skill-ledger",
     },
   });
   await appendEvent(logFile, {
     event: "skill_called",
-    skill: "skill-ledger:generate-skill-audit-report",
+    skill: "skill-ledger:report-export",
     evidence: "self_reported",
     reason: "plugin-prefixed call from host skill list",
   });
 
   const summary = summarizeRun(await readEvents(logFile));
 
-  assert.deepEqual(summary.calledSkills.map((item) => item.name), ["generate-skill-audit-report"]);
+  assert.deepEqual(summary.calledSkills.map((item) => item.name), ["report-export"]);
   assert.equal(summary.calledSkills[0].source, "skill-ledger");
   assert.deepEqual(summary.notCalledSkills.map((item) => item.name), []);
 });
@@ -215,7 +215,7 @@ test("renderChineseMarkdownReport produces Chinese report sections and evidence 
     discoveredSkills: [
       { name: "brainstorming", description: "Use before creative work", source: "superpowers" },
       { name: "plugin-creator", description: "Create plugins", source: "codex" },
-      { name: "generate-skill-audit-report", description: "Write reports", source: "skill-ledger" },
+      { name: "report-export", description: "Export reports", source: "skill-ledger" },
     ],
     calledSkills: [
       {
@@ -227,12 +227,12 @@ test("renderChineseMarkdownReport produces Chinese report sections and evidence 
         reason: "创建功能前需要澄清需求",
       },
       {
-        name: "generate-skill-audit-report",
-        description: "Write reports",
+        name: "report-export",
+        description: "Export reports",
         source: "skill-ledger",
         evidence: "context_observed",
         firstUsedAt: "2026-07-06T08:04:00",
-        reason: "任务结束时生成审计报告",
+        reason: "导出审计报告",
       },
     ],
     notCalledSkills: [{ name: "plugin-creator", description: "Create plugins", source: "codex" }],
@@ -382,7 +382,7 @@ test("normalizeSkillName strips prefixes, namespaces, paths, and SKILL.md suffix
   const { normalizeSkillName } = await import("../core/skill-name.mjs");
   assert.equal(normalizeSkillName("/brainstorming"), "brainstorming");
   assert.equal(normalizeSkillName("@brainstorming"), "brainstorming");
-  assert.equal(normalizeSkillName("skill-ledger:generate-skill-audit-report"), "generate-skill-audit-report");
+  assert.equal(normalizeSkillName("skill-ledger:report-export"), "report-export");
   assert.equal(normalizeSkillName("owner/skill-ledger:brainstorming"), "brainstorming");
   assert.equal(normalizeSkillName("skills\\brainstorming\\SKILL.md"), "brainstorming");
   assert.equal(normalizeSkillName("skills/brainstorming/SKILL.md"), "brainstorming");

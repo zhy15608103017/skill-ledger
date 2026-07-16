@@ -480,8 +480,7 @@ skill-ledger/
 ├── .opencode/plugins/
 │   └── skill-ledger.js          OpenCode 进程内插件
 ├── skills/
-│   ├── using-skill-audit/           启动纪律 skill（会话开始时注入）
-│   └── generate-skill-audit-report/ 报告生成 skill
+│   └── using-skill-audit/           启动纪律 skill（会话开始时注入）
 ├── tests/                       100 个自动化测试
 ├── skill-ledger/                学习数据目录（可 git 跟踪）
 │   └── learned-model.json       学习模型文件
