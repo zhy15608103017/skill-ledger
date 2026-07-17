@@ -1,6 +1,6 @@
 {
   "name": "skill-ledger",
-  "version": "0.2.0",
+  "version": "0.3.4",
   "description": "Record skill usage and generate Chinese Markdown reports.",
   "author": {
     "name": "zhy15608103017"

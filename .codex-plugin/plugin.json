@@ -1,6 +1,6 @@
 {
   "name": "skill-ledger",
-  "version": "0.2.0+codex.20260713043255",
+  "version": "0.3.4+codex.20260713043255",
   "description": "Cross-harness skill usage auditing with Chinese Markdown reports.",
   "author": {
     "name": "zhy15608103017",

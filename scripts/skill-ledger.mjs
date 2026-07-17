@@ -16,6 +16,7 @@ import { pruneAuditData } from "../core/retention.mjs";
 import { scanSkillRoots } from "../core/skill-scanner.mjs";
 import { collectSkillRoots } from "../core/skill-roots.mjs";
 import { defaultLearnedModelPath, learnFromRuns, loadLearnedModel, recordFeedback, saveLearnedModel } from "../core/learning.mjs";
+import { ensureAuditGitIgnored } from "../core/git-ignore.mjs";
 
 const BOOLEAN_FLAGS = new Set(["only-skills", "skills-only", "no-report", "full", "task-context-stdin", "skip-codex-add", "print-only", "merge"]);
 const VALUE_FLAGS = new Set([
@@ -179,6 +180,7 @@ async function startRun(options) {
     SKILL_LEDGER_PRIVACY: options.privacy || process.env.SKILL_LEDGER_PRIVACY,
     SKILL_LEDGER_RETENTION_DAYS: options["retention-days"] || process.env.SKILL_LEDGER_RETENTION_DAYS,
   });
+  await ensureAuditGitIgnored({ auditHome: auditHome(cwd), cwd });
   const rawTaskContext = options["task-context-stdin"] === "true" ? await readStdinText() : options["task-context"];
   const retention = await pruneAuditData(auditHome(cwd), { retentionDays: settings.retentionDays });
   const configuredRoots = arrayOption(options.skills);
