@@ -40,6 +40,9 @@ test("OpenCode adapter registers skills, injects bootstrap, and starts a run", a
     assert.doesNotMatch(output.messages[0].parts[0].text, /^---$/m);
     assert.match(output.messages[0].parts[0].text, /# Using Skill Ledger/);
     assert.match(output.messages[0].parts[0].text, /BEFORE any response or action/);
+    assert.match(output.messages[0].parts[0].text, /already started and bound to the current OpenCode session/);
+    assert.match(output.messages[0].parts[0].text, /Do NOT run `skill-ledger start` or `skill-ledger finish`/);
+    assert.doesNotMatch(output.messages[0].parts[0].text, /Finish the audit and generate the Chinese Markdown report/);
 
     const runFiles = await readdir(path.join(auditHome, "runs"));
     assert.equal(runFiles.length, 1);

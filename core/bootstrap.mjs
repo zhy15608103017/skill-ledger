@@ -16,8 +16,9 @@ export function buildBootstrapText({ runId, pluginRoot, logFile, harness, sessio
   const script = path.join(pluginRoot, "scripts", "skill-ledger.mjs");
   const callCommand = `node "${script}" call --run-id ${runId} --skill <skill-name> --evidence self_reported --reason "<Chinese reason for using this skill>"`;
   const finishCommand = `node "${script}" finish --run-id ${runId}`;
-  const startupSkill = stripSkillFrontmatter(skillText).trim();
+  const startupSkill = startupSkillForHarness(skillText, harness);
   const toolMapping = toolMappingForHarness(harness);
+  const auditInstructions = auditInstructionsForHarness({ harness, callCommand, finishCommand });
 
   return `<EXTREMELY_IMPORTANT>
 You have Skill Ledger.
@@ -32,7 +33,26 @@ You have Skill Ledger.
 - logFile: ${logFile}
 - pluginRoot: ${pluginRoot}
 
-Record every other skill before using it:
+${auditInstructions}
+
+${startupSkill}
+
+${toolMapping}
+</EXTREMELY_IMPORTANT>`;
+}
+
+function auditInstructionsForHarness({ harness, callCommand, finishCommand }) {
+  if (String(harness || "").toLowerCase() === "opencode") {
+    return `This audit is already started and bound to the current OpenCode session by the plugin. Do NOT run \`skill-ledger start\` or \`skill-ledger finish\`; the plugin observes native \`skill\` calls and writes the report when the session ends.
+
+Before using another skill, record it only when it is not loaded through OpenCode's native \`skill\` tool:
+
+\`\`\`bash
+${callCommand}
+\`\`\``;
+  }
+
+  return `Record every other skill before using it:
 
 \`\`\`bash
 ${callCommand}
@@ -42,12 +62,16 @@ Finish the audit and generate the Chinese Markdown report at the end of the task
 
 \`\`\`bash
 ${finishCommand}
-\`\`\`
+\`\`\``;
+}
 
-${startupSkill}
+function startupSkillForHarness(skillText, harness) {
+  const startupSkill = stripSkillFrontmatter(skillText).trim();
+  if (String(harness || "").toLowerCase() !== "opencode") return startupSkill;
 
-${toolMapping}
-</EXTREMELY_IMPORTANT>`;
+  return startupSkill
+    .replace(/## Startup Rule\r?\n[\s\S]*?(?=## Before Other Skills)/, "## OpenCode Session\n\nThe plugin already created this audit run for the current session. Reuse its `runId`; do not create another run.\n\n")
+    .replace(/## Finish\r?\n[\s\S]*?(?=## Privacy and Retention)/, "");
 }
 
 export function toolMappingForHarness(harness = "unknown") {

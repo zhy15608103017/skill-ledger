@@ -8,7 +8,7 @@ Skill Ledger records which agent skills were discovered and called during a task
 
 - **Codex App / Codex CLI**: the bundled `using-skill-audit` skill starts a run with redacted task context and records calls as `self_reported`. Codex support is intentionally honest: without a native Skill lifecycle event, model-recorded calls are never presented as native observations.
 - **Claude Code**: `SessionStart`, `UserPromptSubmit`, `PostToolUse`, and `SessionEnd` hooks provide session-scoped startup, redacted task context, native Skill-call observation, automatic report generation, and active-run cleanup.
-- **OpenCode**: the plugin injects the resident bootstrap into the first user message, records the original task context, observes native `skill` tool calls, isolates concurrent sessions, and closes a run when the session is deleted or ended.
+- **OpenCode**: the plugin injects the resident bootstrap into the first user message, records the original task context, observes native `skill` tool calls, isolates concurrent sessions, and closes a run when the session is deleted or ended. The plugin owns the run lifecycle, so its bootstrap does not instruct the model to run the CLI `start` or `finish` commands.
 
 Tier 1 means that installation assets, session isolation, evidence attribution, privacy defaults, and report generation are covered by automated integration tests in this repository.
 
