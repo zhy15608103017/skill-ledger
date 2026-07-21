@@ -1,6 +1,6 @@
 # Skill Ledger - AI 编程助手 Skill 调用审计工具
 
-## 一句话介绍
+## 介绍
 
 Skill Ledger 是一个跨编程代理（AI coding agent）的 Skill 使用审计插件。它在每次会话中自动记录哪些 skill 被发现、哪些被实际调用、调用证据有多可信，并在会话结束时生成一份中文 Markdown 审计报告。它还具备自学习机制，能从历史运行中自动发现停用词和同义词，并根据用户反馈自适应调整推断阈值。
 
@@ -228,6 +228,17 @@ skill-ledger feedback --skill ui-ux-pro-max --verdict confirmed --reason "确实
 
 **无 `learned-model.json` 时完全回退到硬编码默认行为**，不影响现有功能。
 
+#### 学习机制与预定义切词的冲突处理
+
+学习机制不会重新定义切词边界，而是在已有切词结果上追加停用词、同义词，并调整漏用推断阈值：
+
+- **切词边界**：以预定义的切词流程为准。英文按非字母数字字符切分；中文优先使用 `Intl.Segmenter`，不可用时回退到 CJK bigram。学习模型不会改变这些切词边界。
+- **同义词冲突**：预定义同义词优先。预定义的 `SYNONYM_GROUPS` 先加入映射，学习到的同义词随后追加；如果同一个词已经存在映射，学习结果不会覆盖预定义映射。
+- **停用词冲突**：预定义停用词和学习停用词取并集，任一集合包含该词都会将其过滤。
+- **阈值冲突**：如果学习模型存在对应阈值，则学习到的 `thresholds` 覆盖默认阈值。
+
+因此，学习机制的作用是补充和调优，而不是替换预定义的切词与同义词规则。当前中文路径有一个边界情况：如果学习到的停用词正好是预定义同义词的规范词，而输入使用的是该同义词的中文别名，别名在归并后可能仍被保留；这属于实现上的边界行为，不代表学习规则整体优先。
+
 ### `--merge` 选项
 
 `learn` 命令支持 `--merge` 选项，在学习时保留已有的 feedback 数据：
@@ -267,6 +278,18 @@ skill-ledger learn --merge
 | `tool_observed` | 工具调用探针（非 skill 工具的弱信号） |
 | `audit_note` | 手动备注 |
 | `task_end` | 运行结束 |
+
+### 自动 Git 忽略
+
+`.skill-ledger/` 是审计数据目录，不应提交到仓库。Skill Ledger 会在 `start` 运行的首次写文件前自动确保它被 git 忽略，无需用户手动配置：
+
+1. **探测 git 仓库**：在 cwd 上运行 `git rev-parse --show-toplevel`，非 git 仓库（CI、临时目录）则静默跳过，绝不报错。
+2. **计算相对路径**：把 auditHome 换算成相对仓库根的 POSIX 路径（如 `.skill-ledger/` 或 `packages/app/.skill-ledger/`）。
+3. **幂等写入 .gitignore**：读取仓库根的 `.gitignore`，逐行精确匹配；若规则不存在则追加一段带标识的忽略块，已存在则不重复。
+4. **移出已跟踪文件**：用 `git ls-files` 探测该目录下是否有已被 git 跟踪的文件（`.gitignore` 规则对已跟踪文件无效），有则执行 `git rm --cached -r`（**保留本地文件**，只移出索引）。
+5. **永不阻塞主流程**：所有 git 操作均 `try/catch`，失败只返回 `{ skipped: true }`，不影响审计运行本身。
+
+可通过环境变量 `SKILL_LEDGER_AUTO_GITIGNORE=0` 关闭此行为。该逻辑由 `core/git-ignore.mjs` 实现，在 `startRun` 中统一调用，覆盖所有入口（CLI、session-start hook、OpenCode 进程内插件）。
 
 ---
 
@@ -331,7 +354,7 @@ skill-ledger learn --merge
 
 ## 证据等级说明
 ```
-
+![alt text](image.png)
 ---
 
 ## 支持的宿主工具
@@ -460,6 +483,7 @@ skill-ledger/
 │   ├── active-run.mjs           活跃运行状态管理与会话隔离
 │   ├── audit-log.mjs            事件日志读写、运行汇总、漏用推断
 │   ├── bootstrap.mjs            启动指令文本构建与宿主工具映射
+│   ├── git-ignore.mjs           自动确保 .skill-ledger 被 git 忽略并移出已跟踪文件
 │   ├── learning.mjs             学习机制：停用词/同义词/反馈/阈值自适应
 │   ├── privacy.mjs              隐私设置与敏感信息脱敏
 │   ├── report-md.mjs            中文 Markdown 报告渲染
@@ -481,7 +505,7 @@ skill-ledger/
 │   └── skill-ledger.js          OpenCode 进程内插件
 ├── skills/
 │   └── using-skill-audit/           启动纪律 skill（会话开始时注入）
-├── tests/                       100 个自动化测试
+├── tests/                       107 个自动化测试
 ├── skill-ledger/                学习数据目录（可 git 跟踪）
 │   └── learned-model.json       学习模型文件
 └── docs/                        文档
@@ -491,7 +515,7 @@ skill-ledger/
 
 - **分层清晰**：`core/`（纯逻辑）-> `scripts/`（CLI）-> `hooks/`（宿主适配）-> `.opencode/plugins/`（进程内插件），职责边界明确
 - **依赖极简**：运行时仅依赖 `yaml`（frontmatter 解析），其余全用 Node.js 内置模块
-- **测试覆盖**：100 个自动化测试覆盖 CLI、core、hooks、OpenCode 插件、安装资产、发布包、隐私、保留期、会话隔离、学习机制
+- **测试覆盖**：107 个自动化测试覆盖 CLI、core、hooks、OpenCode 插件、安装资产、发布包、隐私、保留期、会话隔离、学习机制、自动 git 忽略
 - **诚实工程**：证据分级模型不把模型自报包装成宿主确认，分级标注宿主支持状态（Tier 1 vs 实验性）
 - **自学习**：从历史运行和用户反馈中持续优化漏用推断准确度，学习数据可 git 跟踪团队共享
 
@@ -507,12 +531,13 @@ skill-ledger/
 | `SKILL_LEDGER_SKILL_ROOTS` | 额外 skill 目录（逗号或路径分隔符分隔） | - |
 | `SKILL_LEDGER_SKILLS` | 同上（别名） | - |
 | `SKILL_LEDGER` | 设为 `off` 完全禁用插件 | - |
+| `SKILL_LEDGER_AUTO_GITIGNORE` | 设为 `0` / `false` 关闭自动 git 忽略（默认开启） | `1` |
 
 ---
 
 ## 项目信息
 
-- **版本**：0.2.0
+- **版本**：0.3.4
 - **协议**：MIT
 - **仓库**：https://github.com/zhy15608103017/skill-ledger
 - **作者**：zhy15608103017
