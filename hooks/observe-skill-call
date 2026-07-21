@@ -213,14 +213,25 @@ function stringValue(value) {
 }
 
 function detectHarness() {
+  if (isCodexEnvironment()) return "codex";
   if (process.env.CURSOR_PLUGIN_ROOT) return "cursor";
   if (process.env.COPILOT_CLI) return "copilot-cli";
   if (process.env.CLAUDE_PLUGIN_ROOT) return "claude-code";
   return "unknown";
 }
 
+function isCodexEnvironment() {
+  return Boolean(
+    process.env.CODEX_THREAD_ID ||
+    process.env.CODEX_INTERNAL_ORIGINATOR_OVERRIDE ||
+    process.env.CODEX_SHELL ||
+    process.env.CODEX_CI,
+  );
+}
+
 function displayHarnessName(harness) {
   const names = {
+    codex: "Codex",
     "claude-code": "Claude Code",
     "copilot-cli": "GitHub Copilot CLI",
     cursor: "Cursor",

@@ -96,11 +96,11 @@ function stringValue(value) {
 }
 
 function payloadForHarness(bootstrap) {
-  if (process.env.CURSOR_PLUGIN_ROOT || harness === "cursor") {
+  if (harness === "cursor") {
     return { additional_context: bootstrap };
   }
 
-  if (process.env.CLAUDE_PLUGIN_ROOT && !process.env.COPILOT_CLI && harness !== "copilot-cli") {
+  if (harness === "claude-code") {
     return {
       hookSpecificOutput: {
         hookEventName: "SessionStart",
@@ -113,13 +113,23 @@ function payloadForHarness(bootstrap) {
 }
 
 function detectHarness() {
+  if (isCodexEnvironment()) return "codex";
   if (process.env.CURSOR_PLUGIN_ROOT) return "cursor";
   if (process.env.COPILOT_CLI) return "copilot-cli";
   if (process.env.CLAUDE_PLUGIN_ROOT) return "claude-code";
   return "shell-hook";
 }
 
+function isCodexEnvironment() {
+  return Boolean(
+    process.env.CODEX_THREAD_ID ||
+    process.env.CODEX_INTERNAL_ORIGINATOR_OVERRIDE ||
+    process.env.CODEX_SHELL ||
+    process.env.CODEX_CI,
+  );
+}
+
 function displayHarnessName(value) {
-  const names = { "claude-code": "Claude Code", cursor: "Cursor", "copilot-cli": "GitHub Copilot CLI" };
+  const names = { codex: "Codex", "claude-code": "Claude Code", cursor: "Cursor", "copilot-cli": "GitHub Copilot CLI" };
   return names[value] || value || "unknown";
 }

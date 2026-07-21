@@ -41,6 +41,66 @@ test("session-start hook emits Claude, Cursor, and SDK bootstrap shapes", async 
   }
 });
 
+test("session-start identifies Codex before a stale Claude plugin variable", async () => {
+  const auditHome = await mkdtemp(path.join(tmpdir(), "skill-ledger-codex-hook-"));
+  try {
+    const output = runHook({
+      auditHome,
+      env: {
+        CLAUDE_PLUGIN_ROOT: pluginRoot,
+        CURSOR_PLUGIN_ROOT: pluginRoot,
+        COPILOT_CLI: "1",
+        CODEX_THREAD_ID: "codex-thread",
+        CODEX_INTERNAL_ORIGINATOR_OVERRIDE: "Codex Desktop",
+        SKILL_LEDGER_HARNESS: "",
+      },
+    });
+    assert.match(output.additionalContext, /harness: codex/);
+    assert.equal(output.hookSpecificOutput, undefined);
+
+    const runId = output.additionalContext.match(/runId: (\S+)/)?.[1];
+    assert.ok(runId);
+    const events = await readEvents(path.join(auditHome, "runs", `${runId}.jsonl`));
+    assert.equal(events.find((event) => event.event === "task_start")?.harness, "codex");
+    assert.match(events.find((event) => event.event === "skill_called")?.reason || "", /Codex session hook/);
+  } finally {
+    await rm(auditHome, { recursive: true, force: true });
+  }
+});
+
+test("Codex hook lifecycle ignores a stale Claude plugin variable", async () => {
+  const auditHome = await mkdtemp(path.join(tmpdir(), "skill-ledger-codex-lifecycle-"));
+  const env = {
+    CLAUDE_PLUGIN_ROOT: pluginRoot,
+    CURSOR_PLUGIN_ROOT: pluginRoot,
+    COPILOT_CLI: "1",
+    CODEX_THREAD_ID: "codex-thread",
+    CODEX_INTERNAL_ORIGINATOR_OVERRIDE: "Codex Desktop",
+    SKILL_LEDGER_HARNESS: "",
+  };
+  const payload = { session_id: "codex-session", cwd: pluginRoot };
+
+  try {
+    const bootstrap = runHook({ auditHome, env, payload });
+    const runId = bootstrap.additionalContext.match(/runId: (\S+)/)?.[1];
+    assert.ok(runId);
+
+    runObserveHook({
+      auditHome,
+      env,
+      payload: { ...payload, tool_name: "Skill", tool_input: { name: "brainstorming" } },
+    });
+    runSessionEndHook({ auditHome, env, payload });
+
+    const events = await readEvents(path.join(auditHome, "runs", `${runId}.jsonl`));
+    assert.ok(events.some((event) => event.event === "skill_called" && /Codex Skill tool hook/.test(event.reason)));
+    assert.equal(events.filter((event) => event.event === "task_end").length, 1);
+    assert.match(await readFile(path.join(auditHome, "reports", `${runId}.md`), "utf8"), /宿主工具：codex/);
+  } finally {
+    await rm(auditHome, { recursive: true, force: true });
+  }
+});
+
 test("session-start hook discovers shared environment skill roots", async () => {
   const auditHome = await mkdtemp(path.join(tmpdir(), "skill-ledger-hook-env-roots-"));
   const envRoot = path.join(auditHome, "env-skills");

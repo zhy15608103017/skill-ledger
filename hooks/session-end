@@ -60,8 +60,18 @@ function stringValue(value) {
 }
 
 function detectHarness() {
+  if (isCodexEnvironment()) return "codex";
   if (process.env.CLAUDE_PLUGIN_ROOT) return "claude-code";
   return "unknown";
+}
+
+function isCodexEnvironment() {
+  return Boolean(
+    process.env.CODEX_THREAD_ID ||
+    process.env.CODEX_INTERNAL_ORIGINATOR_OVERRIDE ||
+    process.env.CODEX_SHELL ||
+    process.env.CODEX_CI,
+  );
 }
 
 function isDisabled() {
