@@ -7,6 +7,7 @@ import { appendEvent } from "../../core/audit-log.mjs";
 import { buildBootstrapText, readStartupSkillText } from "../../core/bootstrap.mjs";
 import { scanSkillRoots } from "../../core/skill-scanner.mjs";
 import { collectSkillRoots } from "../../core/skill-roots.mjs";
+import { resolveSessionId } from "../../core/session-id.mjs";
 
 const extensionDir = dirname(fileURLToPath(import.meta.url));
 const packageRoot = resolve(extensionDir, "../..");
@@ -17,14 +18,16 @@ let cachedStartupSkill: string | undefined;
 export default function skillLedgerPiExtension(pi: ExtensionAPI) {
   let injectBootstrap = true;
   let activeRun: { runId: string; logFile: string } | undefined;
+  let sessionId = "";
 
   pi.on("resources_discover", async () => ({
     skillPaths: collectSkillRoots({ cwd: process.cwd(), pluginRoot: packageRoot }),
   }));
 
-  pi.on("session_start", async () => {
+  pi.on("session_start", async (event) => {
     injectBootstrap = true;
     activeRun = undefined;
+    sessionId = resolveSessionId({ harness: "pi", values: [event] });
   });
 
   pi.on("session_compact", async () => {
@@ -39,7 +42,7 @@ export default function skillLedgerPiExtension(pi: ExtensionAPI) {
     if (!injectBootstrap) return;
     if (event.messages.some(messageContainsBootstrap)) return;
 
-    activeRun ||= await startAuditRun();
+    activeRun ||= await startAuditRun(sessionId);
     cachedStartupSkill ||= await readStartupSkillText(packageRoot);
 
     const bootstrap = buildBootstrapText({
@@ -47,6 +50,7 @@ export default function skillLedgerPiExtension(pi: ExtensionAPI) {
       pluginRoot: packageRoot,
       logFile: activeRun.logFile,
       harness: "pi",
+      sessionId,
       skillText: cachedStartupSkill,
     });
 
@@ -75,7 +79,7 @@ export default function skillLedgerPiExtension(pi: ExtensionAPI) {
   });
 }
 
-async function startAuditRun() {
+async function startAuditRun(sessionId = "") {
   const cwd = process.cwd();
   const auditHome = process.env.SKILL_LEDGER_HOME || process.env.SKILL_AUDIT_HOME || resolve(cwd, ".skill-ledger");
   const runId = createRunId();
@@ -87,6 +91,7 @@ async function startAuditRun() {
     runId,
     harness: "pi",
     cwd,
+    sessionId,
   });
 
   for (const skill of skills) {

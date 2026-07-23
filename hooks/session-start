@@ -6,13 +6,14 @@ import { fileURLToPath } from "node:url";
 
 import { buildBootstrapText, readStartupSkillText } from "../core/bootstrap.mjs";
 import { appendEvent } from "../core/audit-log.mjs";
+import { resolveSessionId } from "../core/session-id.mjs";
 
 const hookDir = dirname(fileURLToPath(import.meta.url));
 const pluginRoot = resolve(hookDir, "..");
 const payload = parseJson(await readStdin());
 const harness = process.env.SKILL_LEDGER_HARNESS || detectHarness();
 const cwd = process.env.SKILL_LEDGER_CWD || stringValue(payload.cwd) || process.cwd();
-const sessionId = observedSessionId(payload);
+const sessionId = resolveSessionId({ harness, values: [payload] });
 
 try {
   const start = startAuditRun();
@@ -78,14 +79,6 @@ function parseJson(content) {
   try { return JSON.parse(text); } catch { return {}; }
 }
 
-function observedSessionId(value) {
-  return stringValue(
-    process.env.SKILL_LEDGER_SESSION_ID ||
-    value.session_id || value.sessionId || value.conversation_id || value.conversationId ||
-    value.thread_id || value.threadId || value.transcript_path || value.transcriptPath,
-  );
-}
-
 function observedTaskContext(value) {
   return stringValue(value.prompt || value.user_prompt || value.userPrompt || value.message || value.input?.prompt).slice(0, 4000);
 }
@@ -113,9 +106,9 @@ function payloadForHarness(bootstrap) {
 }
 
 function detectHarness() {
-  if (isCodexEnvironment()) return "codex";
   if (process.env.CURSOR_PLUGIN_ROOT) return "cursor";
   if (process.env.COPILOT_CLI) return "copilot-cli";
+  if (isCodexEnvironment()) return "codex";
   if (process.env.CLAUDE_PLUGIN_ROOT) return "claude-code";
   return "shell-hook";
 }

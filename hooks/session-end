@@ -5,6 +5,7 @@ import { dirname, resolve } from "node:path";
 import { fileURLToPath } from "node:url";
 
 import { readActiveRun } from "../core/active-run.mjs";
+import { resolveSessionId } from "../core/session-id.mjs";
 
 const hookDir = dirname(fileURLToPath(import.meta.url));
 const pluginRoot = resolve(hookDir, "..");
@@ -14,7 +15,7 @@ try {
   const payload = parseJson(await readStdin());
   const harness = process.env.SKILL_LEDGER_HARNESS || detectHarness();
   const cwd = process.env.SKILL_LEDGER_CWD || stringValue(payload.cwd) || process.cwd();
-  const sessionId = observedSessionId(payload);
+  const sessionId = resolveSessionId({ harness, values: [payload] });
   const auditHome = process.env.SKILL_LEDGER_HOME || process.env.SKILL_AUDIT_HOME || resolve(cwd, ".skill-ledger");
   const activeRun = await readActiveRun({ auditHome, harness, sessionId, cwd });
   if (!activeRun?.runId) process.exit(0);
@@ -46,20 +47,14 @@ function parseJson(content) {
   try { return JSON.parse(text); } catch { return {}; }
 }
 
-function observedSessionId(payload) {
-  return stringValue(
-    process.env.SKILL_LEDGER_SESSION_ID ||
-    payload.session_id || payload.sessionId || payload.conversation_id || payload.conversationId ||
-    payload.thread_id || payload.threadId || payload.transcript_path || payload.transcriptPath,
-  );
-}
-
 function stringValue(value) {
   if (value === undefined || value === null || typeof value === "object") return "";
   return String(value).trim();
 }
 
 function detectHarness() {
+  if (process.env.CURSOR_PLUGIN_ROOT) return "cursor";
+  if (process.env.COPILOT_CLI) return "copilot-cli";
   if (isCodexEnvironment()) return "codex";
   if (process.env.CLAUDE_PLUGIN_ROOT) return "claude-code";
   return "unknown";

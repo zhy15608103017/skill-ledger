@@ -17,6 +17,7 @@ import { scanSkillRoots } from "../core/skill-scanner.mjs";
 import { collectSkillRoots } from "../core/skill-roots.mjs";
 import { defaultLearnedModelPath, learnFromRuns, loadLearnedModel, recordFeedback, saveLearnedModel } from "../core/learning.mjs";
 import { ensureAuditGitIgnored } from "../core/git-ignore.mjs";
+import { resolveSessionId } from "../core/session-id.mjs";
 
 const BOOLEAN_FLAGS = new Set(["only-skills", "skills-only", "no-report", "full", "task-context-stdin", "skip-codex-add", "print-only", "merge"]);
 const VALUE_FLAGS = new Set([
@@ -174,7 +175,8 @@ async function startRun(options) {
   const cwd = path.resolve(options.cwd || process.cwd());
   const runId = validateRunId(options["run-id"] || createRunId());
   const logFile = logPath(runId, cwd);
-  const sessionId = options["session-id"] || "";
+  const harness = options.harness || "unknown";
+  const sessionId = resolveSessionId({ harness, explicit: options["session-id"] });
   const settings = privacySettings({
     ...process.env,
     SKILL_LEDGER_PRIVACY: options.privacy || process.env.SKILL_LEDGER_PRIVACY,
@@ -195,7 +197,7 @@ async function startRun(options) {
   await appendEvent(logFile, {
     event: "task_start",
     runId,
-    harness: options.harness || "unknown",
+    harness,
     cwd,
     sessionId,
     privacyMode: settings.mode,
@@ -223,7 +225,7 @@ async function startRun(options) {
 
   await writeActiveRun({
     auditHome: auditHome(cwd),
-    harness: options.harness || "unknown",
+    harness,
     runId,
     logFile,
     cwd,

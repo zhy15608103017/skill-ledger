@@ -31,6 +31,9 @@ Start and maintain a local audit of which skills were discovered and which skill
 node "<plugin-root>/scripts/skill-ledger.mjs" start --harness "<tool-name>" --cwd "<workspace>" --task-context "<short redacted task summary>" --startup-skill using-skill-audit --startup-evidence self_reported
 ```
 
+If the host exposes a session identifier, pass it with `--session-id`. The CLI also reads
+`SKILL_LEDGER_SESSION_ID`; in Codex it falls back to `CODEX_THREAD_ID` when no explicit ID is supplied.
+
 Keep the returned `runId` for the rest of the task.
 
 ## Before Other Skills

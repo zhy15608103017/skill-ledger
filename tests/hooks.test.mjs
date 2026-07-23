@@ -48,8 +48,6 @@ test("session-start identifies Codex before a stale Claude plugin variable", asy
       auditHome,
       env: {
         CLAUDE_PLUGIN_ROOT: pluginRoot,
-        CURSOR_PLUGIN_ROOT: pluginRoot,
-        COPILOT_CLI: "1",
         CODEX_THREAD_ID: "codex-thread",
         CODEX_INTERNAL_ORIGINATOR_OVERRIDE: "Codex Desktop",
         SKILL_LEDGER_HARNESS: "",
@@ -62,9 +60,82 @@ test("session-start identifies Codex before a stale Claude plugin variable", asy
     assert.ok(runId);
     const events = await readEvents(path.join(auditHome, "runs", `${runId}.jsonl`));
     assert.equal(events.find((event) => event.event === "task_start")?.harness, "codex");
+    assert.equal(events.find((event) => event.event === "task_start")?.sessionId, "codex-thread");
     assert.match(events.find((event) => event.event === "skill_called")?.reason || "", /Codex session hook/);
   } finally {
     await rm(auditHome, { recursive: true, force: true });
+  }
+});
+
+test("Cursor and Copilot hooks retain host-provided session IDs", async () => {
+  const auditHome = await mkdtemp(path.join(tmpdir(), "skill-ledger-hook-session-ids-"));
+  try {
+    const cursor = runHook({
+      auditHome,
+      env: { CURSOR_PLUGIN_ROOT: pluginRoot, SKILL_LEDGER_HARNESS: "cursor" },
+      payload: { conversation_id: "cursor-session" },
+    });
+    const cursorRunId = cursor.additional_context.match(/runId: (\S+)/)?.[1];
+
+    const copilot = runHook({
+      auditHome,
+      env: { COPILOT_CLI: "1", SKILL_LEDGER_HARNESS: "copilot-cli" },
+      payload: { input: { threadId: "copilot-session" } },
+    });
+    const copilotRunId = copilot.additionalContext.match(/runId: (\S+)/)?.[1];
+
+    const cursorEvents = await readEvents(path.join(auditHome, "runs", `${cursorRunId}.jsonl`));
+    const copilotEvents = await readEvents(path.join(auditHome, "runs", `${copilotRunId}.jsonl`));
+    assert.equal(cursorEvents.find((event) => event.event === "task_start")?.sessionId, "cursor-session");
+    assert.equal(copilotEvents.find((event) => event.event === "task_start")?.sessionId, "copilot-session");
+  } finally {
+    await rm(auditHome, { recursive: true, force: true });
+  }
+});
+
+test("Cursor and Copilot session-end hooks finish the matching host run", async () => {
+  for (const host of [
+    {
+      harness: "cursor",
+      env: {
+        CURSOR_PLUGIN_ROOT: pluginRoot,
+        SKILL_LEDGER_HARNESS: "",
+        CODEX_THREAD_ID: "stale-codex-thread",
+        CODEX_INTERNAL_ORIGINATOR_OVERRIDE: "Codex Desktop",
+        CODEX_SHELL: "1",
+        CODEX_CI: "1",
+      },
+      outputKey: "additional_context",
+    },
+    {
+      harness: "copilot-cli",
+      env: {
+        COPILOT_CLI: "1",
+        SKILL_LEDGER_HARNESS: "",
+        CODEX_THREAD_ID: "stale-codex-thread",
+        CODEX_INTERNAL_ORIGINATOR_OVERRIDE: "Codex Desktop",
+        CODEX_SHELL: "1",
+        CODEX_CI: "1",
+      },
+      outputKey: "additionalContext",
+    },
+  ]) {
+    const auditHome = await mkdtemp(path.join(tmpdir(), `skill-ledger-${host.harness}-lifecycle-`));
+    const payload = { session_id: `${host.harness}-session`, cwd: pluginRoot };
+    try {
+      const bootstrap = runHook({ auditHome, env: host.env, payload });
+      const runId = bootstrap[host.outputKey].match(/runId: (\S+)/)?.[1];
+      assert.ok(runId);
+
+      runSessionEndHook({ auditHome, env: host.env, payload });
+
+      const events = await readEvents(path.join(auditHome, "runs", `${runId}.jsonl`));
+      assert.equal(events.find((event) => event.event === "task_start")?.harness, host.harness);
+      assert.equal(events.filter((event) => event.event === "task_end").length, 1);
+      assert.match(await readFile(path.join(auditHome, "reports", `${runId}.md`), "utf8"), new RegExp(runId));
+    } finally {
+      await rm(auditHome, { recursive: true, force: true });
+    }
   }
 });
 
@@ -72,8 +143,6 @@ test("Codex hook lifecycle ignores a stale Claude plugin variable", async () => 
   const auditHome = await mkdtemp(path.join(tmpdir(), "skill-ledger-codex-lifecycle-"));
   const env = {
     CLAUDE_PLUGIN_ROOT: pluginRoot,
-    CURSOR_PLUGIN_ROOT: pluginRoot,
-    COPILOT_CLI: "1",
     CODEX_THREAD_ID: "codex-thread",
     CODEX_INTERNAL_ORIGINATOR_OVERRIDE: "Codex Desktop",
     SKILL_LEDGER_HARNESS: "",

@@ -42,6 +42,29 @@ test("CLI starts a run, records a skill call, and writes a Chinese report", asyn
   assert.match(markdown, /用户请求创建新功能/);
 });
 
+test("CLI start resolves session IDs from explicit, shared, and Codex environment sources", async () => {
+  const cwd = await mkdtemp(path.join(tmpdir(), "skill-ledger-cli-session-id-"));
+
+  run(["start", "--run-id", "codex-env", "--harness", "codex", "--cwd", cwd, "--only-skills"], cwd, {
+    env: { CODEX_THREAD_ID: "codex-thread", SKILL_LEDGER_SESSION_ID: "" },
+  });
+  run(["start", "--run-id", "shared-env", "--harness", "kimi", "--cwd", cwd, "--only-skills"], cwd, {
+    env: { CODEX_THREAD_ID: "", SKILL_LEDGER_SESSION_ID: "shared-session" },
+  });
+  run(
+    ["start", "--run-id", "explicit-id", "--harness", "gemini", "--cwd", cwd, "--only-skills", "--session-id", "explicit-session"],
+    cwd,
+    { env: { SKILL_LEDGER_SESSION_ID: "shared-session" } },
+  );
+
+  const codexEvents = await readEvents(path.join(cwd, ".skill-ledger", "runs", "codex-env.jsonl"));
+  const sharedEvents = await readEvents(path.join(cwd, ".skill-ledger", "runs", "shared-env.jsonl"));
+  const explicitEvents = await readEvents(path.join(cwd, ".skill-ledger", "runs", "explicit-id.jsonl"));
+  assert.equal(codexEvents[0].sessionId, "codex-thread");
+  assert.equal(sharedEvents[0].sessionId, "shared-session");
+  assert.equal(explicitEvents[0].sessionId, "explicit-session");
+});
+
 test("CLI start appends explicit skill roots to default discovery roots", async () => {
   const cwd = await mkdtemp(path.join(tmpdir(), "skill-ledger-cli-roots-"));
   const extraSkillDir = path.join(cwd, "extra-skills", "extra-review");

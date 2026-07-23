@@ -9,6 +9,7 @@ import { scanSkillRoots } from "../core/skill-scanner.mjs";
 import { collectSkillRoots } from "../core/skill-roots.mjs";
 import { isSkillTool, normalizeSkillName, normalizeToolName } from "../core/skill-name.mjs";
 import { observedPayloadMetadata, observedPayloadText, sanitizeTaskContext } from "../core/privacy.mjs";
+import { resolveSessionId } from "../core/session-id.mjs";
 
 const hookDir = dirname(fileURLToPath(import.meta.url));
 const pluginRoot = resolve(hookDir, "..");
@@ -19,7 +20,7 @@ try {
   const harness = process.env.SKILL_LEDGER_HARNESS || detectHarness();
   const cwd = process.env.SKILL_LEDGER_CWD || stringValue(payload.cwd) || process.cwd();
   const auditHome = process.env.SKILL_LEDGER_HOME || process.env.SKILL_AUDIT_HOME || resolve(cwd, ".skill-ledger");
-  const sessionId = observedSessionId(payload);
+  const sessionId = resolveSessionId({ harness, values: [payload] });
   const activeRun = await readActiveRun({ auditHome, harness, sessionId, cwd });
 
   if (!activeRun?.runId || !activeRun?.logFile) process.exit(0);
@@ -83,14 +84,6 @@ try {
 
 function isSkillLedgerDisabled() {
   return ["0", "false", "no", "off"].includes(String(process.env.SKILL_LEDGER || "").trim().toLowerCase());
-}
-
-function observedSessionId(payload) {
-  return stringValue(
-    process.env.SKILL_LEDGER_SESSION_ID ||
-    payload.session_id || payload.sessionId || payload.conversation_id || payload.conversationId ||
-    payload.thread_id || payload.threadId || payload.transcript_path || payload.transcriptPath,
-  ).trim();
 }
 
 function isUserPromptEvent(payload) {
@@ -213,9 +206,9 @@ function stringValue(value) {
 }
 
 function detectHarness() {
-  if (isCodexEnvironment()) return "codex";
   if (process.env.CURSOR_PLUGIN_ROOT) return "cursor";
   if (process.env.COPILOT_CLI) return "copilot-cli";
+  if (isCodexEnvironment()) return "codex";
   if (process.env.CLAUDE_PLUGIN_ROOT) return "claude-code";
   return "unknown";
 }

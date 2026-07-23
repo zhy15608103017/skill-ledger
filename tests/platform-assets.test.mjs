@@ -49,6 +49,8 @@ test("platform manifests expose Skill Ledger skills and startup bootstrap", asyn
   assert.match(piExtension, /context_observed/);
   assert.match(piExtension, /collectSkillRoots/);
   assert.match(piExtension, /resources_discover[\s\S]*collectSkillRoots/);
+  assert.match(piExtension, /session_start[\s\S]*resolveSessionId/);
+  assert.match(piExtension, /task_start[\s\S]*sessionId/);
   assert.deepEqual(pkg.pi.skills, ["./skills"]);
   assert.deepEqual(pkg.pi.extensions, ["./.pi/extensions/skill-ledger.ts"]);
 

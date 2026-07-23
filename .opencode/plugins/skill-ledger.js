@@ -13,6 +13,7 @@ import { pruneAuditData } from "../../core/retention.mjs";
 import { normalizeSkillName } from "../../core/skill-name.mjs";
 import { scanSkillRoots } from "../../core/skill-scanner.mjs";
 import { collectSkillRoots } from "../../core/skill-roots.mjs";
+import { sessionIdFromValues } from "../../core/session-id.mjs";
 
 const __dirname = path.dirname(fileURLToPath(import.meta.url));
 const pluginRoot = path.resolve(__dirname, "../..");
@@ -205,12 +206,7 @@ function createRunId() {
 }
 
 function observedSessionId(...values) {
-  for (const value of values) {
-    const id = value?.sessionID || value?.sessionId || value?.session_id || value?.conversationID || value?.conversationId ||
-      value?.event?.properties?.info?.id || value?.properties?.info?.id || value?.properties?.sessionID;
-    if (id) return String(id);
-  }
-  return "";
+  return sessionIdFromValues(...values);
 }
 
 function firstUserText(message) {
